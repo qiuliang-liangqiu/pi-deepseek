@@ -3,6 +3,7 @@
 > 由 `python scripts/setup-tools.py --markdown` 生成；改 `scripts/setup-tools.py` 的目录后重新生成。
 > `apt` 列给的是**包名**，`winget` 列是包 ID，`兜底` 是没有原生包时的最小替代。
 > 装之前脚本会用 `apt-cache policy` / `winget show` 复核可用性，不可用的会标 `不可用`。
+> 同一张表也用于 WSL 发行版和 **VMware 虚拟机（走 SSH）**：目标系统不同，走的包管理器就不同。
 
 | 工具 | 组 | Windows (winget) | Ubuntu/Debian (apt) | Kali (apt) | 兜底 |
 |---|---|---|---|---|---|

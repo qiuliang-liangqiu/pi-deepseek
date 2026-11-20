@@ -195,10 +195,21 @@ CTF 工具缺什么不该靠猜。先选**装到哪个系统**（Windows 本机 
 脚本会打印"工具 → 包名 → 是否可用"再执行；三系统对照见 [`docs/TOOLS.md`](docs/TOOLS.md)。
 
 ```bash
-python scripts/setup-tools.py              # 菜单：选目标系统 → 看映射 → 装
-python scripts/setup-tools.py --list       # 只看映射，不装
-python scripts/setup-tools.py --target kali --yes --allow-sudo
+python scripts/setup-tools.py                 # 菜单：选目标 → 看映射 → 装
+python scripts/setup-tools.py --list          # 只看映射，不装
+python scripts/setup-tools.py --target vm --yes          # 已开机的 VMware 虚拟机
+python scripts/setup-tools.py --target wsl:Ubuntu --yes  # WSL 发行版
+python scripts/setup-tools.py --install-wsl              # 没装 WSL 时帮你装（要 UAC）
 ```
+
+它会**自己发现**能装到哪：
+
+| 目标 | 发现方式 | 安装通道 |
+|---|---|---|
+| Windows 本机 | 总是可用 | `winget` |
+| WSL: Ubuntu / Kali | `wsl.exe -l -q`（UTF-16 解码） | `wsl -d <distro> -u root`，无需 sudo |
+| VMware 虚拟机 | `vmrun list` + 扫 `C:\VM`、`Documents\Virtual Machines` | `ssh`（自动读 `~/.ssh/config` 的 Host 别名；拿不到 IP 会问你，或 `--start-vm` 帮你开机） |
+| 本机 Linux | `/etc/os-release` | `apt-get`（需 `--allow-sudo`） |
 
 底层目录仍是 `scripts/toolkit.py`（32 个工具，8 个类别），只执行包管理器命令，
 绝不 `curl | sh`、不从 releases 下二进制：
