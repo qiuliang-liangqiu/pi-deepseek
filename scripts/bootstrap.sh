@@ -229,41 +229,20 @@ fi
 if [ "$TOOLS" = 1 ]; then
   c "1;36" "
 [8/8] tools（--tools）"
-  TK="$REPO_ROOT/scripts/toolkit.py"
-  if [ ! -f "$TK" ]; then
-    warn "scripts/toolkit.py not found (partial download?) — skipping"
+  ST="$REPO_ROOT/scripts/setup-tools.py"
+  if [ ! -f "$ST" ]; then
+    warn "scripts/setup-tools.py not found (partial download?) — skipping"
   else
-    MISSING="$("$PY" "$TK" --count-missing 2>/dev/null || echo "?")"
-    if [ "$MISSING" = "0" ]; then
-      ok "all catalog tools already installed"
-    else
-      warn "$MISSING tools missing from the catalog"
-      if [ "$TOOLS_ALL" = 1 ]; then
-        PICK="all"
-      else
-        PICK="jq,ripgrep,fd,7z,nmap,pwntools,pycryptodome,z3,binwalk,exiftool"
-      fi
-      if [ "$DRY" = 1 ]; then
-        warn "[dry-run] would run: toolkit.py --install $PICK"
-      else
-        GO=1
-        if [ "$YES" = 0 ] && [ -t 0 ]; then
-          printf "  install %s? [Y/n] " "$PICK"
-          read -r a; case "$a" in n|N) GO=0 ;; esac
-        fi
-        if [ "$GO" = 0 ]; then
-          warn "skipped; run later: python scripts/toolkit.py --install"
-        else
-          TARGS=(--install "$PICK" --yes)
-          [ "$ALLOW_SUDO" = 1 ] && TARGS+=(--allow-sudo)
-          if "$PY" "$TK" "${TARGS[@]}"; then
-            ok "tools installed"
-          else
-            warn "some tools failed — run: python scripts/toolkit.py --check"
-          fi
-        fi
-      fi
+    TARGS=()
+    [ "$TOOLS_ALL" = 1 ] && TARGS+=(--all-groups)
+    [ "$DRY" = 1 ] && TARGS+=(--dry-run)
+    [ "$YES" = 1 ] && TARGS+=(--yes)
+    [ "$ALLOW_SUDO" = 1 ] && TARGS+=(--allow-sudo)
+    # 交互安装时把控制权交给选择菜单；非交互默认当前系统
+    if [ "$YES" = 1 ] || [ "$DRY" = 1 ]; then
+      TARGS+=(--auto)
     fi
+    "$PY" "$ST" "${TARGS[@]}" || warn "setup-tools reported problems — run it again to see details"
   fi
 fi
 

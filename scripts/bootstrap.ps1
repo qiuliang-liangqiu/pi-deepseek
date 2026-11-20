@@ -235,35 +235,17 @@ if ($Api) {
 # ---------------------------------------------------------------- 8. tools (optional)
 if ($Tools) {
     Write-Host "`n[8/8] tools (-Tools)" -ForegroundColor Cyan
-    $tk = Join-Path $RepoRoot "scripts\toolkit.py"
-    if (-not (Test-Path $tk)) {
-        Warn "scripts\toolkit.py not found - skipping"
+    $st = Join-Path $RepoRoot "scripts\setup-tools.py"
+    if (-not (Test-Path $st)) {
+        Warn "scripts\setup-tools.py not found - skipping"
     } else {
-        $missing = -1
-        try { $missing = [int](& $Python $tk --count-missing 2>$null) } catch { $missing = -1 }
-        if ($missing -eq 0) {
-            Ok "all catalog tools already installed"
-        } elseif ($missing -lt 0) {
-            Warn "could not read tool status - run: python scripts	oolkit.py --check"
-        } else {
-            Warn ("{0} tools missing" -f $missing)
-            $pick = if ($ToolsAll) { "all" } else { "jq,ripgrep,fd,7z,nmap,pwntools,pycryptodome,z3,binwalk,exiftool" }
-            if ($DryRun) {
-                Warn "[dry-run] would run: toolkit.py --install $pick"
-            } else {
-                $go = $Yes
-                if (-not $go) {
-                    $answer = Read-Host "    install $pick ? [Y/n]"
-                    $go = -not ($answer -match '^[nN]')
-                }
-                if (-not $go) {
-                    Warn "skipped; run later: python scripts\toolkit.py --install"
-                } else {
-                    & $Python $tk --install $pick --yes
-                    if ($LASTEXITCODE -eq 0) { Ok "tools installed" } else { Warn "some tools failed - run: python scripts\toolkit.py --check" }
-                }
-            }
-        }
+        $targs = @()
+        if ($Yes -or $DryRun) { $targs += "--auto" }
+        if ($DryRun) { $targs += "--dry-run" }
+        if ($Yes) { $targs += "--yes" }
+        if ($ToolsAll) { $targs += "--all-groups" }
+        & $Python $st @targs
+        if ($LASTEXITCODE -ne 0) { Warn "setup-tools reported problems" }
     }
 }
 

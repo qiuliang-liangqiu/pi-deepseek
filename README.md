@@ -191,8 +191,17 @@ cd toolbox && python -m unittest discover -s framework/tests -v
 
 ## 工具自检与按需安装
 
-CTF 工具缺什么不该靠猜。`scripts/toolkit.py` 有一份**白名单目录**（32 个工具，8 个类别），
-只执行包管理器命令，绝不 `curl | sh`、不从 releases 下二进制：
+CTF 工具缺什么不该靠猜。先选**装到哪个系统**（Windows 本机 / WSL-Ubuntu / WSL-Kali），
+脚本会打印"工具 → 包名 → 是否可用"再执行；三系统对照见 [`docs/TOOLS.md`](docs/TOOLS.md)。
+
+```bash
+python scripts/setup-tools.py              # 菜单：选目标系统 → 看映射 → 装
+python scripts/setup-tools.py --list       # 只看映射，不装
+python scripts/setup-tools.py --target kali --yes --allow-sudo
+```
+
+底层目录仍是 `scripts/toolkit.py`（32 个工具，8 个类别），只执行包管理器命令，
+绝不 `curl | sh`、不从 releases 下二进制：
 
 ```bash
 python scripts/toolkit.py --check                 # ✓ 已装 / · 缺失
