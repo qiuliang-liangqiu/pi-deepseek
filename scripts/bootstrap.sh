@@ -9,7 +9,7 @@
 #   bash scripts/bootstrap.sh --api        # after install: configure the API key + verify (one step)
 #   bash scripts/bootstrap.sh --api --key-file ~/k.txt --provider deepseek --model deepseek-flash
 #   bash scripts/bootstrap.sh --tools      # 装完后：检查并（问过后）安装推荐工具
-#   bash scripts/bootstrap.sh --tools-all --yes --allow-sudo   # 全装（Linux 需要 sudo 时）
+#   bash scripts/bootstrap.sh --prereq      # 缺啥装啥（python/node/npm/pi/git）
 #
 # Idempotent: re-running backs up the previous agent dir and reinstalls.
 # Never touches auth.json / settings.json / mcp.json (only creates examples' copies).
@@ -18,7 +18,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${PI_AGENT_DIR:-$HOME/.pi/agent}"
 DRY=0; SMOKE=1; YES=0; MINIMAL=0; API=0; KEY_FILE=""; PROVIDER="deepseek"; MODEL="deepseek-flash"; BASE_URL=""; VERIFY=1
-TOOLS=0; TOOLS_ALL=0; ALLOW_SUDO=0
+TOOLS=0; TOOLS_ALL=0; ALLOW_SUDO=0; PREREQ=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
@@ -35,6 +35,7 @@ while [ $# -gt 0 ]; do
     --tools) TOOLS=1; shift ;;
     --tools-all) TOOLS=1; TOOLS_ALL=1; shift ;;
     --allow-sudo) ALLOW_SUDO=1; shift ;;
+    --prereq) PREREQ=1; shift ;;
     -h|--help) sed -n '2,12p' "$0" | sed 's/^# *//'; exit 0 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
@@ -63,6 +64,19 @@ case "$PYVER" in
   3.8|3.9|3.1[0-9]) ok "python $PYVER ($PY)" ;;
   *) die "python $PYVER too old (need >= 3.8)" ;;
 esac
+
+if [ -f "$REPO_ROOT/scripts/prereq.py" ]; then
+  if ! "$PY" "$REPO_ROOT/scripts/prereq.py" --quiet >/dev/null 2>&1; then
+    warn "前置不完整（python/node/npm/pi/磁盘/网络），详见：python scripts/prereq.py"
+    if [ "$PREREQ" = 1 ] && [ "$DRY" = 0 ]; then
+      "$PY" "$REPO_ROOT/scripts/prereq.py" --install $( [ "$YES" = 1 ] && echo --yes )
+    else
+      echo "      自动安装：bash scripts/bootstrap.sh --prereq"
+    fi
+  else
+    ok "prereq: python/node/npm/pi/disk 齐全"
+  fi
+fi
 
 NODE_BIN=""; NODE_VER=""
 if command -v node >/dev/null 2>&1; then NODE_BIN="node"; NODE_VER="$(node -v)"; fi

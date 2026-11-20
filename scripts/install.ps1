@@ -1,4 +1,4 @@
-# Install the agent/ layer into %USERPROFILE%\.pi\agent (with a timestamped backup).
+﻿# Install the agent/ layer into %USERPROFILE%\.pi\agent (with a timestamped backup).
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot

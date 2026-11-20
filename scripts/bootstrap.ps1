@@ -1,4 +1,4 @@
-# One-shot setup for pi-agent workbench on Windows.
+﻿# One-shot setup for pi-agent workbench on Windows.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 #   ... -DryRun          show what would happen
@@ -21,7 +21,8 @@ param(
     [string]$BaseUrl = "",
     [switch]$NoVerify,
     [switch]$Tools,
-    [switch]$ToolsAll
+    [switch]$ToolsAll,
+    [switch]$Prereq
 )
 $ErrorActionPreference = "Stop"
 
@@ -55,6 +56,21 @@ if (-not $Python) { Fail "python not found (needed by bin\*.py and toolbox)" }
 $PyVer = & $Python -c "import sys;print('%d.%d'%sys.version_info[:2])"
 if ([version]$PyVer -lt [version]"3.8") { Fail "python $PyVer too old (need >= 3.8)" }
 Ok "python $PyVer ($Python)"
+
+$pre = Join-Path $RepoRoot "scripts\prereq.py"
+if (Test-Path $pre) {
+    & $Python $pre --quiet 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Warn "前置不完整（python/node/npm/pi/disk/network） - 跑 python scripts\prereq.py 看详情"
+        if ($Prereq -and -not $DryRun) {
+            $pargs = @("--install")
+            if ($Yes) { $pargs += "--yes" }
+            & $Python $pre @pargs
+        } else {
+            Write-Host "      自动安装：powershell -File scripts\bootstrap.ps1 -Prereq"
+        }
+    } else { Ok "prereq: python/node/npm/pi/disk 齐全" }
+}
 
 $Node = Get-Command node -ErrorAction SilentlyContinue
 if ($Node) { Ok "node $(& node -v)" } else { Warn "node not found - eval/mirror checks will be skipped" }

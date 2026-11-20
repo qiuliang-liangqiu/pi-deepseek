@@ -38,6 +38,7 @@ from pathlib import Path
 
 IS_WIN = sys.platform.startswith("win")
 IS_LINUX = sys.platform.startswith("linux")
+IS_MAC = sys.platform == "darwin"
 SSH_CONFIG = Path.home() / ".ssh" / "config"
 _SSH_PW: dict[str, str] = {}
 SSH_PW_FILE = ""
@@ -52,6 +53,7 @@ class Tool:
     win: str = ""
     ubuntu: list[str] = field(default_factory=list)
     kali: list[str] = field(default_factory=list)
+    brew: list[str] = field(default_factory=list)
     pip: str = ""
     go: str = ""
     gem: str = ""
@@ -157,6 +159,31 @@ CATALOG: list[Tool] = [
     Tool("bettercap", "ad", "中间人/ARP", kali=["bettercap"], probe="bettercap"),
 ]
 BY_ID = {t.id: t for t in CATALOG}
+
+# macOS (brew) 名字；没列到的说明该工具在 macOS 上要么系统自带、要么不适用
+BREW_NAMES = {
+    "nmap": ["nmap"], "ncat": ["nmap"], "jq": ["jq"], "ripgrep": ["ripgrep"], "fd": ["fd"],
+    "curl": ["curl"], "wget": ["wget"], "binutils": ["binutils"], "file": ["file"], "xxd": ["xxd"],
+    "unzip": ["unzip"], "gcc": ["gcc"], "make": ["make"], "ruby": ["ruby"], "go": ["go"],
+    "dig": ["bind"], "nc": ["netcat"], "socat": ["socat"], "masscan": ["masscan"],
+    "whatweb": ["whatweb"], "subfinder": ["subfinder"], "nikto": ["nikto"], "wpscan": ["wpscan"],
+    "wfuzz": ["wfuzz"], "dirsearch": ["dirsearch"], "arjun": ["arjun"], "commix": ["commix"],
+    "dalfox": ["dalfox"], "ffuf": ["ffuf"], "gobuster": ["gobuster"], "httpx": ["httpx"],
+    "nuclei": ["nuclei"], "sqlmap": ["sqlmap"], "mitmproxy": ["mitmproxy"],
+    "gdb": ["gdb"], "radare2": ["radare2"], "rizin": ["rizin"], "upx": ["upx"],
+    "ROPgadget": ["ropgadget"], "ropper": ["ropper"], "one_gadget": ["one_gadget"],
+    "seccomp-tools": ["seccomp-tools"], "strace": ["strace"], "ltrace": ["ltrace"],
+    "angr": ["angr"], "capstone": ["capstone"], "keystone": ["keystone"],
+    "hashcat": ["hashcat"], "john": ["john"], "hashid": ["hashid"],
+    "exiftool": ["exiftool"], "binwalk": ["binwalk"], "foremost": ["foremost"],
+    "sleuthkit": ["sleuthkit"], "tshark": ["wireshark"], "wireshark": ["wireshark"],
+    "tcpdump": ["tcpdump"], "steghide": ["steghide"], "zsteg": ["zsteg"],
+    "pngcheck": ["pngcheck"], "scalpel": ["scalpel"], "testdisk": ["testdisk"],
+    "jadx": ["jadx"], "apktool": ["apktool"], "frida": ["frida"], "7z": ["sevenzip"],
+    "hydra": ["hydra"], "aircrack-ng": ["aircrack-ng"], "bettercap": ["bettercap"],
+}
+for _t in CATALOG:
+    _t.brew = BREW_NAMES.get(_t.id, [])
 
 # pip 包名 → import 名（探测用，别拿命令行名当证据）
 PIP_MODULE = {
@@ -380,7 +407,19 @@ def targets() -> list[Target]:
         t.os_name = guest_os(t)          # 未开机时退回按 VM 名字猜
         t.label = f"{os_title(t.os_name)}（虚拟机: {vm['name']} · {state}）"
         out.append(t)
-    if IS_LINUX:
+    if IS_MAC:
+        out.append(Target("brew", "macOS（本机 brew）", "brew", "host", os_name="macos"))
+    if IS_LINUX and not shutil.which("apt-get"):
+        # Fedora / Arch / Alpine …: 不猜包名，直接说清楚
+        try:
+            rel = Path("/etc/os-release").read_text(encoding="utf-8", errors="replace")
+            name = next((l.split("=", 1)[1].strip().strip('"') for l in rel.splitlines()
+                         if l.startswith("PRETTY_NAME=")), "Linux")
+        except OSError:
+            name = "Linux"
+        out.append(Target("unsupported", f"{name}（暂不支持：本脚本只覆盖 Debian 系）",
+                          "unsupported", "host", os_name="linux"))
+    if IS_LINUX and shutil.which("apt-get"):
         d = ""
         try:
             rel = Path("/etc/os-release").read_text(encoding="utf-8", errors="replace").lower()
@@ -497,6 +536,8 @@ def ssh_reachable(target: Target, interactive: bool = True) -> bool:
 def tool_pkgs(t: Tool, target: Target) -> list[str]:
     if target.kind == "winget":
         return [t.win] if t.win else []
+    if target.kind == "brew":
+        return t.brew
     if target.kind == "apt":
         return t.kali if "kali" in (target.distro or "") else t.ubuntu
     return t.kali if "kali" in (target.distro or "").lower() else t.ubuntu
@@ -543,6 +584,8 @@ def winget_has(wid: str) -> bool:
 
 
 def make_plan(target: Target, ids: list[str] | None, groups: list[str] | None) -> list[dict]:
+    if target.kind == "unsupported":
+        return []
     rows = []
     for t in CATALOG:
         if ids and t.id not in ids:
@@ -556,6 +599,8 @@ def make_plan(target: Target, ids: list[str] | None, groups: list[str] | None) -
     all_pkgs = sorted({p for r in rows if r["pkgs"] and not r["installed"] for p in r["pkgs"]})
     if target.kind == "winget":
         ok = {p: winget_has(p) for p in all_pkgs}
+    elif target.kind == "brew":
+        ok = {p: run(["brew", "info", p], timeout=40)[0] == 0 for p in all_pkgs}
     else:
         ok = apt_has(target, all_pkgs) if all_pkgs else {}
     for r in rows:
@@ -614,6 +659,15 @@ def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> li
                 failed.append(t.id)
                 print(f"    ! {t.id} failed (exit {rc})")
         return failed
+
+    if target.kind == "brew" and apt_pkgs:
+        argv = ["brew", "install", *sorted(set(apt_pkgs))]
+        print(f"    $ {' '.join(argv)}")
+        if not dry:
+            rc, _ = run(argv, timeout=3600)
+            if rc != 0:
+                print(f"    ! brew failed (exit {rc})")
+        apt_pkgs = []
 
     if apt_pkgs:
         cmd = "LC_ALL=C apt-get install -y " + " ".join(sorted(set(apt_pkgs)))
@@ -721,8 +775,8 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.markdown:
-        print("| 工具 | 组 | Windows (winget) | Ubuntu/Debian (apt) | Kali (apt) | 兜底 |")
-        print("|---|---|---|---|---|---|")
+        print("| 工具 | 组 | Windows (winget) | Ubuntu/Debian (apt) | Kali (apt) | macOS (brew) | 兜底 |")
+        print("|---|---|---|---|---|---|---|")
         for t in CATALOG:
             win = f"`{t.win}`" if t.win else "—"
             ub = ", ".join(f"`{x}`" for x in t.ubuntu) or "—"
@@ -734,7 +788,8 @@ def main() -> int:
                 fb.append("go install")
             if t.gem:
                 fb.append(f"gem:`{t.gem}`")
-            print(f"| `{t.id}` | {t.group} | {win} | {ub} | {ka} | {', '.join(fb) or '—'} |")
+            mac = ", ".join(f"`{x}`" for x in t.brew) or "—"
+            print(f"| `{t.id}` | {t.group} | {win} | {ub} | {ka} | {mac} | {', '.join(fb) or '—'} |")
         return 0
 
     if args.install_wsl:

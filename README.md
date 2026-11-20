@@ -57,9 +57,15 @@ cd pi-deepseek-v1 && bash scripts/bootstrap.sh --minimal
 
 ## 快速开始
 
-### 1. 安装 pi
+### 1. 装前置（python / node / pi）
 
-按 [pi.dev](https://pi.dev) 的说明安装（本仓库基于 pi 1.5.2 调试）。确认 `pi --version` 可用。
+```bash
+python scripts/prereq.py            # 体检：python>=3.10、node>=18、npm、pi、磁盘 8GB、网络
+python scripts/prereq.py --install  # 缺什么装什么（winget / apt / brew，会先问）
+```
+
+按 [pi.dev](https://pi.dev) 的说明安装 pi（本仓库基于 1.5.2 调试），或让上面这条命令代装。
+**python 需要 ≥ 3.10**（脚本用了 `X | None` 注解）；低于它 `prereq.py` 会直接告诉你升哪个。
 
 ### 2. 一条命令装好
 
