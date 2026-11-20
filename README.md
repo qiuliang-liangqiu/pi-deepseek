@@ -24,6 +24,32 @@ scripts/    bootstrap / 安装 / 脱敏检查
 | **复盘层** `reports/` | 复盘的结构与脱敏规则（示例，不含真实战绩） | 模板 + 规则 |
 | **评测层** `eval/` | 改完 skill 后怎么回归：行为镜像 8 探针/19 检查、14 条路由用例 | `score.mjs` + `route_eval.py` |
 
+## 最快的方式：一行命令
+
+**Windows**（PowerShell）:
+
+```powershell
+powershell -c "irm https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/install.ps1 | iex"
+```
+
+**Linux / macOS / Git-Bash**:
+
+```bash
+curl -fsSL https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/install.sh | bash
+```
+
+它会自己判断：**没装就装，装过就增量更新**。装完按提示填 key 即可。
+
+| 想做的事 | 一条命令 |
+|---|---|
+| 只装前置（python/node/npm/pi） | `curl -fsSL https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/prereq.sh \| bash -s -- --install` |
+| 装 + 配 API key | 上面第一条后面加 `-Api`（PS）或 `--api`（bash） |
+| 装 + 挑工具 | 加 `-Tools` / `--tools` |
+| 只更新不装 | `bash scripts/update.sh` / `powershell -File scripts\update.ps1` |
+
+> 用 jsdelivr 而不是 `raw.githubusercontent.com`：后者在国内经常超时（这台机器实测过）。
+> 两个脚本都带镜像回退，raw 失败会自动换 jsdelivr / fastly。
+
 ## 我要下哪些
 
 **整仓只有 5.4 MB / 326 个文件**，全下最省事。但按目的可以只取一部分：

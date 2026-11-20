@@ -17,7 +17,13 @@ param(
     [string[]]$Rest
 )
 $ErrorActionPreference = "Stop"
-$Repo = Split-Path -Parent $PSScriptRoot
+$Repo = $null
+if ($PSScriptRoot -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "scripts\update.py"))) {
+    $Repo = Split-Path -Parent $PSScriptRoot
+} elseif (Test-Path (Join-Path "$HOME\pi-agent" "scripts\update.py")) {
+    $Repo = Join-Path $HOME "pi-agent"
+}
+if (-not $Repo) { Write-Host "no repo found: run scripts\install.ps1 first" -ForegroundColor Red; exit 1 }
 $Py = (Get-Command python -ErrorAction SilentlyContinue).Source
 if (-not $Py) { $Py = (Get-Command python3 -ErrorAction SilentlyContinue).Source }
 if (-not $Py) { Write-Host "python not found" -ForegroundColor Red; exit 1 }

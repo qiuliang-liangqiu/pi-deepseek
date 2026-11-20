@@ -65,6 +65,32 @@ Linux 工具层用同一份清单在目标机器上重建。
 | Linux 工具（80 个） | ⚠️ 重建 | `scripts/setup-tools.py`，10–20 分钟、1.5–3 GB |
 | 环境（VPN、API key、平台账号、本机路径、GPU） | ❌ 带不走 | 见文末清单，需要自己配 |
 
+## 最快的方式：一行命令
+
+**Windows**（PowerShell）:
+
+```powershell
+powershell -c "irm https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/install.ps1 | iex"
+```
+
+**Linux / macOS / Git-Bash**:
+
+```bash
+curl -fsSL https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/install.sh | bash
+```
+
+它会自己判断：**没装就装，装过就增量更新**。装完按提示填 key 即可。
+
+| 想做的事 | 一条命令 |
+|---|---|
+| 只装前置（python/node/npm/pi） | `curl -fsSL https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/prereq.sh \| bash -s -- --install` |
+| 装 + 配 API key | 上面第一条后面加 `-Api`（PS）或 `--api`（bash） |
+| 装 + 挑工具 | 加 `-Tools` / `--tools` |
+| 只更新不装 | `bash scripts/update.sh` / `powershell -File scripts\update.ps1` |
+
+> 用 jsdelivr 而不是 `raw.githubusercontent.com`：后者在国内经常超时（这台机器实测过）。
+> 两个脚本都带镜像回退，raw 失败会自动换 jsdelivr / fastly。
+
 ## 三条路，按推荐顺序
 
 ### A. Windows + WSL2（最接近作者本机，推荐）

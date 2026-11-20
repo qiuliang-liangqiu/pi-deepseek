@@ -1,34 +1,75 @@
-﻿# Install the agent/ layer into %USERPROFILE%\.pi\agent (with a timestamped backup).
+﻿# 一条命令装好（或在已有安装上增量更新）。
+#
+#   powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+#   powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Api -Tools
+#   powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -DryRun
+#
+# 或者不下载仓库，直接远程跑：
+#   irm https://raw.githubusercontent.com/qiuliang-liangqiu/pi-deepseek-v1/main/scripts/install.ps1 | iex
+#
+# 参数：-Api 配模型 key；-Tools 挑工具；-Yes 不问；-DryRun 只看；-Minimal 只装规则层。
+[CmdletBinding()]
+param(
+    [switch]$Api,
+    [switch]$Tools,
+    [switch]$Yes,
+    [switch]$DryRun,
+    [switch]$Minimal,
+    [string]$KeyFile = "",
+    [string]$RepoUrl = "https://github.com/qiuliang-liangqiu/pi-deepseek-v1.git",
+    [string]$WorkDir = "$HOME\pi-agent",
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Rest
+)
 $ErrorActionPreference = "Stop"
 
-$RepoRoot = Split-Path -Parent $PSScriptRoot
-$Dest = if ($env:PI_AGENT_DIR) { $env:PI_AGENT_DIR } else { Join-Path $HOME ".pi\agent" }
-$Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$Backup = Join-Path $Dest "backups\$Stamp-install"
+function Say($m)  { Write-Host $m -ForegroundColor Cyan }
+function Warn($m) { Write-Host $m -ForegroundColor Yellow }
+function Die($m)  { Write-Host $m -ForegroundColor Red; exit 1 }
 
-New-Item -ItemType Directory -Force -Path $Dest | Out-Null
-
-foreach ($item in @("AGENTS.md", "agents", "bin", "extensions", "prompts", "knowledge", "skills")) {
-    $src = Join-Path $RepoRoot "agent\$item"
-    if (-not (Test-Path $src)) { continue }
-    $dst = Join-Path $Dest $item
-    if (Test-Path $dst) {
-        New-Item -ItemType Directory -Force -Path $Backup | Out-Null
-        Move-Item -Path $dst -Destination (Join-Path $Backup $item)
-        Write-Host "backup: $dst -> $Backup\$item"
-    }
-    Copy-Item -Path $src -Destination $dst -Recurse
-    Write-Host "install: $item"
+# ---- 找仓库：本地脚本目录，或者远程执行时先拉下来
+$root = $null
+if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "bootstrap.ps1"))) {
+    $root = Split-Path -Parent $PSScriptRoot
+} elseif ($PSScriptRoot -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "scripts\bootstrap.ps1"))) {
+    $root = Split-Path -Parent $PSScriptRoot
 }
 
-Write-Host ""
-Write-Host "Done. Agent dir: $Dest"
-Write-Host "Backup dir:      $Backup (if anything was replaced)"
-Write-Host ""
-Write-Host "Next:"
-Write-Host "  `$env:PI_WORKBENCH = `"$RepoRoot\toolbox`""
-Write-Host "  Copy-Item examples\settings.example.json `$HOME\.pi\agent\settings.json"
-Write-Host "  # put your model key in `$HOME\.pi\agent\auth.json (see examples\README.md)"
-Write-Host ""
-Write-Host "Smoke test:"
-Write-Host "  node `"$RepoRoot\eval\mirror\score.mjs`" verify"
+if (-not $root) {
+    Say "== 没有本地仓库，先取到 $WorkDir"
+    if (-not (Test-Path $WorkDir)) { New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null }
+    if (Test-Path (Join-Path $WorkDir "scripts\bootstrap.ps1")) {
+        Say "  已存在，跳过下载（要更新就跑 scripts\update.ps1）"
+    } elseif (Get-Command git -ErrorAction SilentlyContinue) {
+        git clone --depth 1 $RepoUrl $WorkDir
+        if ($LASTEXITCODE -ne 0) { Die "git clone 失败：$RepoUrl" }
+    } else {
+        Say "  没有 git，改用 zip 下载"
+        $zip = Join-Path $env:TEMP "pi-deepseek.zip"
+        $zipUrl = ($RepoUrl -replace '\.git$', '') -replace '^https://github\.com/', 'https://codeload.github.com/'
+        $zipUrl = "$zipUrl/zip/refs/heads/main"
+        Invoke-WebRequest -Uri $zipUrl -OutFile $zip -UseBasicParsing
+        $tmp = Join-Path $env:TEMP ("pi-deepseek-" + [guid]::NewGuid().ToString("N"))
+        Expand-Archive -Path $zip -DestinationPath $tmp -Force
+        $inner = Get-ChildItem $tmp -Directory | Select-Object -First 1
+        Copy-Item -Path (Join-Path $inner.FullName "*") -Destination $WorkDir -Recurse -Force
+    }
+    $root = $WorkDir
+}
+
+Say "== 仓库: $root"
+$bootstrap = Join-Path $root "scripts\bootstrap.ps1"
+if (-not (Test-Path $bootstrap)) { Die "找不到 scripts\bootstrap.ps1（下载不完整？）" }
+
+# ---- 组装 bootstrap 参数
+$args2 = @()
+if ($Api)     { $args2 += "-Api" }
+if ($Tools)   { $args2 += "-Tools" }
+if ($Yes)     { $args2 += "-Yes" }
+if ($DryRun)  { $args2 += "-DryRun" }
+if ($Minimal) { $args2 += "-Minimal" }
+if ($KeyFile) { $args2 += @("-KeyFile", $KeyFile) }
+if ($Rest)    { $args2 += $Rest }
+
+& powershell -NoProfile -ExecutionPolicy Bypass -File $bootstrap @args2
+exit $LASTEXITCODE
