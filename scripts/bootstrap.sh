@@ -20,7 +20,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${PI_AGENT_DIR:-$HOME/.pi/agent}"
 DRY=0; SMOKE=1; YES=0; MINIMAL=0; API=0; KEY_FILE=""; PROVIDER="deepseek"; MODEL="deepseek-flash"; BASE_URL=""; VERIFY=1
-TOOLS=0; TOOLS_ALL=0; ALLOW_SUDO=0; PREREQ=0; MODE=auto
+TOOLS=0; TOOLS_ALL=0; ALLOW_SUDO=0; PREREQ=0; MODE=auto; WIN_GAPS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
@@ -38,6 +38,7 @@ while [ $# -gt 0 ]; do
     --tools-all) TOOLS=1; TOOLS_ALL=1; shift ;;
     --allow-sudo) ALLOW_SUDO=1; shift ;;
     --prereq) PREREQ=1; shift ;;
+    --win-gaps) WIN_GAPS="${2:-}"; shift; shift ;;
     --update) MODE=update; shift ;;
     --reinstall) MODE=install; shift ;;
     -h|--help) sed -n '2,16p' "$0" | sed 's/^# *//'; exit 0 ;;
@@ -313,6 +314,7 @@ if [ "$TOOLS" = 1 ]; then
     [ "$DRY" = 1 ] && TARGS+=(--dry-run)
     [ "$YES" = 1 ] && TARGS+=(--yes)
     [ "$ALLOW_SUDO" = 1 ] && TARGS+=(--allow-sudo)
+    [ -n "$WIN_GAPS" ] && TARGS+=(--win-gaps "$WIN_GAPS")
     # 交互安装时把控制权交给选择菜单；非交互默认当前系统
     if [ "$YES" = 1 ] || [ "$DRY" = 1 ]; then
       TARGS+=(--auto)

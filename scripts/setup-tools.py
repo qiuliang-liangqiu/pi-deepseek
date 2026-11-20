@@ -651,13 +651,108 @@ def show_plan(rows: list[dict], target: Target) -> None:
 
     if target.kind == "winget" and missing_win:
         print()
-        print("  Windows 上没有这些工具的包：" + ", ".join(missing_win))
-        print("  三条路（按推荐顺序）：")
-        print("    1) WSL：wsl --install -d Ubuntu  → python3 scripts/setup-tools.py --target ubuntu")
-        print("    2) VM：开机后 --target ubuntu --ssh-host <ip> --ssh-user <user>")
-        print("    3) MSYS2：winget install MSYS2.MSYS2，然后")
-        print('       C:/msys64/usr/bin/bash -lc "pacman -S --noconfirm mingw-w64-x86_64-gdb binutils"')
-        print("       （本脚本会自动从 C:/msys64 下找 gdb / objdump）")
+        shown = ", ".join(missing_win[:12])
+        more = f" 等 {len(missing_win)} 个" if len(missing_win) > 12 else f"（共 {len(missing_win)} 个）"
+        print(f"  Windows 上没有这些工具的包：{shown}{more}")
+        print("  选一个去处（或加 --win-gaps skip 跳过）：")
+        print("    1) WSL（推荐，一次 UAC）        wsl --install -d Ubuntu")
+        print("    2) 已有虚拟机，走 SSH           需要 IP + 用户名")
+        print("    3) MSYS2（gdb/binutils/gcc/make） winget install MSYS2.MSYS2 + pacman")
+        print("    4) 跳过（这些工具先不用）")
+
+
+# ------------------------------------------------------------ windows gaps
+MSYS2_PKGS = ["mingw-w64-x86_64-gdb", "mingw-w64-x86_64-binutils"]
+
+
+def msys2_bash() -> str:
+    for cand in (r"C:\msys64\usr\bin\bash.exe", r"C:\msys64\usr\bin\bash"):
+        if Path(cand).exists():
+            return cand
+    return ""
+
+
+def install_msys2(dry: bool) -> int:
+    """winget install MSYS2 -> pacman -S gdb binutils."""
+    if not shutil.which("winget"):
+        print("    ! 没有 winget，装不了 MSYS2")
+        return 1
+    argv = ["winget", "install", "-e", "--id", "MSYS2.MSYS2",
+            "--accept-package-agreements", "--accept-source-agreements"]
+    print(f"    $ {' '.join(argv)}")
+    if dry:
+        return 0
+    rc, _ = run(argv, timeout=1800)
+    if rc != 0:
+        print(f"    ! winget 装 MSYS2 失败 (exit {rc})")
+        return rc
+
+    bash = msys2_bash()
+    if not bash:
+        print("    ! 装完找不到 C:/msys64/usr/bin/bash.exe（可能需要重开终端）")
+        return 1
+    cmd = f"{bash} -lc " + shlex_quote("pacman -S --noconfirm " + " ".join(MSYS2_PKGS))
+    print(f"    $ {cmd}")
+    rc, out = run(["cmd", "/c", cmd], timeout=3600)
+    print("    ok" if rc == 0 else f"    ! pacman 失败 (exit {rc})")
+    return rc
+
+
+def shlex_quote(text: str) -> str:
+    return '"' + text.replace('"', '\\"') + '"'
+
+
+def handle_windows_gaps(missing: list[str], args) -> Target | None:
+    """Ask where the Linux-only tools should go. Returns a new target if the
+    user picked the VM route, otherwise None."""
+    action = args.win_gaps
+    if not action:
+        if args.yes or args.dry_run or not sys.stdin.isatty():
+            print("\n  非交互运行：跳过（加 --win-gaps wsl|vm|msys2|skip 可指定）")
+            return None
+        print("\n  选一个去处：[1] WSL  [2] 已有虚拟机(SSH)  [3] MSYS2  [4] 跳过")
+        try:
+            pick = input("  > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        action = {"1": "wsl", "2": "vm", "3": "msys2", "4": "skip", "": "skip"}.get(pick, "skip")
+    else:
+        print(f"\n  --win-gaps {action}")
+
+    if action == "skip":
+        return None
+
+    if action == "wsl":
+        cmd = ["wsl.exe", "--install", "-d", "Ubuntu"]
+        print("    $ " + " ".join(cmd) + "（会弹 UAC，装完通常要重启）")
+        if not args.dry_run:
+            rc, _ = run(cmd, timeout=1800, want_tty=True)
+            print("    ok，重启后重跑：python scripts/setup-tools.py --target ubuntu"
+                  if rc == 0 else f"    ! exit {rc}")
+        return None
+
+    if action == "msys2":
+        install_msys2(args.dry_run)
+        return None
+
+    # vm
+    host = args.ssh_host
+    user = args.ssh_user
+    if not host and sys.stdin.isatty():
+        try:
+            host = input("  虚拟机 IP: ").strip()
+            user = input("  用户名 [kali/ubuntu 用户]: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return None
+    if not host:
+        print("    ! 需要 --ssh-host <ip> --ssh-user <user>")
+        return None
+    t = Target("ssh:" + host, f"SSH: {user + '@' if user else ''}{host}", "ssh",
+               host, host=host, user=user, port=args.ssh_port)
+    if not ssh_reachable(t):
+        print(f"    ! 连不上 {host}：确认虚拟机开机、sshd 在跑，或先 ssh-copy-id")
+        return None
+    return t
 
 
 # --------------------------------------------------------------------- install
@@ -795,6 +890,11 @@ def main() -> int:
     ap.add_argument("--ssh-user", default="")
     ap.add_argument("--ssh-port", type=int, default=22)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--auto", action="store_true",
+                    help="非交互选目标（第一个可用），但仍会问是否安装")
+    ap.add_argument("--all-groups", action="store_true", help="(默认就是全部组)")
+    ap.add_argument("--win-gaps", default="", choices=["", "wsl", "vm", "msys2", "skip"],
+                    help="Windows 缺 Linux 专属工具时怎么办（不给就交互问）")
     ap.add_argument("--kali-meta", action="store_true",
                     help="Kali: 先装 kali-linux-headless（约 1.5GB，一次到位），再补齐差异")
     ap.add_argument("--ssh-password-file", default="", help="从文件读 SSH 密码（不落 shell 历史）")
@@ -874,7 +974,7 @@ def main() -> int:
             print(f"target {args.target!r} not found; have: {[t.key for t in ts]}")
             return 2
         chosen = pool[:1]
-    elif args.yes:
+    elif args.yes or args.auto:
         chosen = [t for t in ts if t.kind == "winget"] or ts[:1]
     else:
         picked = menu(ts)
@@ -937,6 +1037,17 @@ def main() -> int:
 
     rows = make_plan(target, ids, groups)
     show_plan(rows, target)
+
+    if target.kind == "winget":
+        gaps = [r["tool"].id for r in rows
+                if not r["installed"] and not r["available"] and not r["fallback"]]
+        if gaps:
+            new_target = handle_windows_gaps(gaps, args)
+            if new_target is not None:
+                target = new_target
+                rows = make_plan(target, ids, groups)
+                show_plan(rows, target)
+
     if args.json:
         print(json.dumps([{k: v for k, v in r.items() if k != "tool"} | {"id": r["tool"].id}
                           for r in rows], ensure_ascii=False, indent=2))
