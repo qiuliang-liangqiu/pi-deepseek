@@ -408,6 +408,13 @@ def run_rows(rows: list[list[str]], dry: bool, allow_sudo: bool) -> bool:
 
 
 def write_state() -> None:
+    try:
+        _write_state()
+    except OSError as exc:
+        print(f"  (state not written: {exc})")
+
+
+def _write_state() -> None:
     rows = survey()
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps(
@@ -444,7 +451,11 @@ def pick(rows: list[dict]) -> list[str]:
     for i, r in enumerate(missing, 1):
         print(f"  {i:>2}. {r['id']:<12} [{r['category']}] {r['why']}")
     print(f"\n  选择：编号(1,3,5 或 2-4)、类别({','.join(CATEGORIES)})、all、回车取消")
-    raw = input("> ").strip()
+    try:
+        raw = input("> ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("  (no interactive input; use --install <ids> or --install all --yes)")
+        return []
     if not raw:
         return []
     return resolve(raw, missing)

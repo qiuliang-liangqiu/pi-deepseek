@@ -60,8 +60,11 @@ def main() -> int:
     node = run(["node", "-v"])
     add("node", OK if node else WARN, node or "not found (eval/mirror skipped)")
 
-    pi = run(["pi", "--version"])
-    add("pi", OK if pi else WARN, pi or "not on PATH (npm i -g @earendil-works/pi-coding-agent)")
+    pi_path = shutil.which("pi") or shutil.which("pi.cmd") or shutil.which("pi.exe")
+    pi = run([pi_path, "--version"]) if pi_path else None
+    add("pi", OK if pi else WARN,
+        pi or ("found but not runnable: " + pi_path if pi_path
+               else "not on PATH (npm i -g @earendil-works/pi-coding-agent)"))
 
     # ---- agent dir
     add("agent dir", OK if AGENT.is_dir() else FAIL, str(AGENT))

@@ -557,12 +557,29 @@ def split_addr(addr: str) -> tuple[str, int]:
     return host, int(port or 80)
 
 
+def _is_ip_literal(host: str) -> bool:
+    import ipaddress
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+        return True
+    except ValueError:
+        return False
+
+
 def probe_one(addr: str, timeout: float = 2.0) -> ProbeResult:
     t0 = time.monotonic()
     try:
         host, port = split_addr(addr)
-        with socket.create_connection((host, port), timeout=timeout):
-            pass
+        # Numeric literals skip getaddrinfo: on a loaded Windows box resolution alone
+        # can burn most of the timeout budget and report a live port as dead.
+        if _is_ip_literal(host):
+            family = socket.AF_INET6 if ":" in host else socket.AF_INET
+            with socket.socket(family, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                s.connect((host, port))
+        else:
+            with socket.create_connection((host, port), timeout=timeout):
+                pass
         return ProbeResult(addr, True, int((time.monotonic() - t0) * 1000))
     except (OSError, ValueError) as e:
         return ProbeResult(addr, False, int((time.monotonic() - t0) * 1000), str(e))

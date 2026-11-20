@@ -298,7 +298,7 @@ class ProbeAndPreflightTest(unittest.TestCase):
         dead_port = dead.getsockname()[1]
         dead.close()
 
-        results = g.probe_addrs([f"127.0.0.1:{port}", f"127.0.0.1:{dead_port}"], timeout=0.5)
+        results = g.probe_addrs([f"127.0.0.1:{port}", f"127.0.0.1:{dead_port}"], timeout=2.0)
         srv.close()
         self.assertTrue(results[0].ok)
         self.assertFalse(results[1].ok)

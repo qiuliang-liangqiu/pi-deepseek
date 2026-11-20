@@ -20,7 +20,7 @@ for arg in "$@"; do
     --no-smoke) SMOKE=0 ;;
     --yes|-y) YES=1 ;;
     --minimal|--no-toolbox) MINIMAL=1 ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,10p' "$0" | sed 's/^# *//'; exit 0 ;;
     *) echo "unknown flag: $arg" >&2; exit 2 ;;
   esac
 done

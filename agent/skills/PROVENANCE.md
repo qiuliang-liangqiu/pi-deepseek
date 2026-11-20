@@ -34,3 +34,8 @@ frontmatter 适配 pi、每个 SKILL.md 顶部加「先看索引 → grep 定位
 `agents/{planner,reviewer,scout,worker}.md`、`prompts/*.md`、`extensions/subagent/`
 来自 pi 1.5.2 的示例/发行包（MIT，Mario Zechner），按本工作流做过修改。
 `agents/{recon,exploit,verifier}.md` 是自研。
+
+## 本仓库原创（非第三方）
+
+`tsec-bench-run`、`tsec-bench`、`team`、`portfolio`、`ctf-kb`、`toolkit`、
+`prompt-injection-guard`、`ctfy-engagement-pwn` 由本仓库作者撰写，随本仓库 MIT 发布。

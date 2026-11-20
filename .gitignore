@@ -15,6 +15,9 @@ backups/
 
 # 工具箱运行产物
 toolbox/work/*
+# close 时自动生成的案例库（含真实题目/地址，绝不能进仓库）
+toolbox/docs/CASELIB/
+agent/toolkit.json
 !toolbox/work/slots.py
 !toolbox/work/sub.py
 !toolbox/work/SUBMIT_PITFALL.md

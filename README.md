@@ -18,7 +18,7 @@ scripts/    bootstrap / 安装 / 脱敏检查
 
 | 层 | 解决什么 | 代码/文档 |
 |---|---|---|
-| **规则层** `agent/` | 把「14 分钟无新原语就停」「≤20 req/s」「triage 30 分钟」从提示词变成 hook 和脚本 | 6 个扩展、5 个 bin 脚本、7 个自研 skill |
+| **规则层** `agent/` | 把「14 分钟无新原语就停」「≤20 req/s」「triage 30 分钟」从提示词变成 hook 和脚本 | 7 个扩展目录（6 个启用）、5 个 bin 脚本、8 个自研 skill |
 | **工具层** `toolbox/` | 平台 API、指纹→打法、竞态编排、SKIP/时间盒看门狗、滚动调度 | `framework/` 10 个模块 + 单测 |
 | **复盘层** `reports/` | 复盘的结构与脱敏规则（示例，不含真实战绩） | 模板 + 规则 |
 | **评测层** `eval/` | 改完 skill 后怎么回归：行为镜像 8 探针/19 检查、14 条路由用例 | `score.mjs` + `route_eval.py` |
@@ -36,8 +36,9 @@ scripts/    bootstrap / 安装 / 脱敏检查
 
 三个目录的分工：
 
-- **`agent/`** — 装进 `~/.pi/agent/`，是**唯一必须**的部分。里面是 AGENTS.md、6 个扩展、
-  5 个 bin 脚本、21 个 skill、7 个子代理。**它不 import toolbox，可以完全独立运行**。
+- **`agent/`** — 装进 `~/.pi/agent/`，是**唯一必须**的部分。里面是 AGENTS.md、6 个启用扩展
+  （`parked-ctfy/` 是未启用的草稿）、5 个 bin 脚本、23 个 skill 目录（共 33 个可加载 skill）、
+  7 个子代理。**它不 import toolbox，可以完全独立运行**。
 - **`toolbox/`** — 跑分 CLI（`framework.cli`）+ 三份文档。用 `PI_WORKBENCH` 指过去即可，
   不需要拷进 `~/.pi/agent`。`--minimal` 装法下 `$PI_WORKBENCH` 未设置，skill 里提到
   toolbox 的命令会失效，但规则/防护/多 Agent 全都能用。
@@ -108,7 +109,7 @@ export TSEC_TOKEN=<platform-token>
 `agent/AGENTS.md` 是总规则（250 行），核心是六节：
 read-vs-cat、**止损闸门与速率纪律**、跑分流程、CTFY engagement、prompt-injection 防护、镜像/本地路径对照。
 
-配套的 6 个扩展（`agent/extensions/`）：
+配套的 6 个扩展（`agent/extensions/`，另有未启用的 `parked-ctfy/` 草稿）：
 
 | 扩展 | 作用 | 开关 |
 |---|---|---|
@@ -129,8 +130,8 @@ python agent/bin/scan_injection.py <path> [--strings-only] [--stdin]
 bash agent/bin/triage.sh <host:port> [outfile]
 ```
 
-7 个自研 skill（`agent/skills/`）：`tsec-bench-run`、`team`、`portfolio`、`tsec-bench`、`ctf-kb`、
-`prompt-injection-guard`、`ctfy-engagement-pwn`，以及上面的镜像路径对照。
+8 个自研 skill（`agent/skills/`）：`tsec-bench-run`、`team`、`portfolio`、`tsec-bench`、`ctf-kb`、
+`prompt-injection-guard`、`ctfy-engagement-pwn`、`toolkit`，以及上面的镜像路径对照。
 `tsec-bench-run/DOCTRINE.md` 是四步推演和 Recon/Exploit 双工的完整版。
 第三方/移植的 skill 见 `agent/skills/PROVENANCE.md`。
 
@@ -166,7 +167,7 @@ cd toolbox && python -m unittest discover -s framework/tests -v
 
 ## 工具自检与按需安装
 
-CTF 工具缺什么不该靠猜。`scripts/toolkit.py` 有一份**白名单目录**（30 个工具，8 个类别），
+CTF 工具缺什么不该靠猜。`scripts/toolkit.py` 有一份**白名单目录**（32 个工具，8 个类别），
 只执行包管理器命令，绝不 `curl | sh`、不从 releases 下二进制：
 
 ```bash
