@@ -543,10 +543,26 @@ def tool_pkgs(t: Tool, target: Target) -> list[str]:
     return t.kali if "kali" in (target.distro or "").lower() else t.ubuntu
 
 
+MSYS2_DIRS = [r"C:\msys64\mingw64\bin", r"C:\msys64\usr\bin",
+              r"C:\msys64\clang64\bin", r"C:\Program Files\Git\usr\bin"]
+
+
+def msys2_tool(name: str) -> str:
+    """gdb/objdump these usually live in MSYS2 or Git-Bash on Windows, not winget."""
+    if not IS_WIN:
+        return ""
+    for d in MSYS2_DIRS:
+        for ext in (".exe", ""):
+            cand = Path(d) / (name + ext)
+            if cand.exists():
+                return str(cand)
+    return ""
+
 def installed_in(target: Target, t: Tool) -> bool:
     probe = t.probe or t.id
     if target.kind == "winget":
-        return shutil.which(probe) is not None or shutil.which(t.id) is not None
+        return (shutil.which(probe) is not None or shutil.which(t.id) is not None
+                or bool(msys2_tool(probe)))
     if target.kind == "apt":
         if shutil.which(probe) is not None:
             return True
@@ -623,6 +639,8 @@ def make_plan(target: Target, ids: list[str] | None, groups: list[str] | None) -
 def show_plan(rows: list[dict], target: Target) -> None:
     print(f"\n目标：{target.label}")
     print(f"  {'id':<12} {'组':<10} {'包名':<34} 状态")
+    missing_win = [r["tool"].id for r in rows
+                   if not r["installed"] and not r["available"] and not r["fallback"]]
     for r in rows:
         t = r["tool"]
         state = "已装" if r["installed"] else ("可装" if r["available"] else
@@ -630,6 +648,16 @@ def show_plan(rows: list[dict], target: Target) -> None:
         pkg = ", ".join(r["pkgs"]) if r["pkgs"] else "-"
         note = f"  ← {t.note}" if t.note else ""
         print(f"  {t.id:<12} {t.group:<10} {pkg:<34} {state}{note}")
+
+    if target.kind == "winget" and missing_win:
+        print()
+        print("  Windows 上没有这些工具的包：" + ", ".join(missing_win))
+        print("  三条路（按推荐顺序）：")
+        print("    1) WSL：wsl --install -d Ubuntu  → python3 scripts/setup-tools.py --target ubuntu")
+        print("    2) VM：开机后 --target ubuntu --ssh-host <ip> --ssh-user <user>")
+        print("    3) MSYS2：winget install MSYS2.MSYS2，然后")
+        print('       C:/msys64/usr/bin/bash -lc "pacman -S --noconfirm mingw-w64-x86_64-gdb binutils"')
+        print("       （本脚本会自动从 C:/msys64 下找 gdb / objdump）")
 
 
 # --------------------------------------------------------------------- install
