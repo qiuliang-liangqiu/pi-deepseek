@@ -10,7 +10,7 @@ Targets discovered automatically
 
     python scripts/setup-tools.py                      # menu, then a mapping table
     python scripts/setup-tools.py --list               # mappings only
-    python scripts/setup-tools.py --target vm --ssh-user qiu --only jq --dry-run
+    python scripts/setup-tools.py --target vm --ssh-user <you> --only jq --dry-run
     python scripts/setup-tools.py --target wsl:Ubuntu --yes
     python scripts/setup-tools.py --target windows --group web,recon --yes
 
@@ -238,8 +238,15 @@ def vm_candidates() -> list[dict]:
             line = line.strip()
             if line.lower().endswith(".vmx"):
                 vms[line] = {"vmx": line, "running": True}
-    roots = [Path(r"C:\VM"), Path.home() / "Documents" / "Virtual Machines",
-             Path(os.environ.get("VM_DIRS", ""))] if IS_WIN else [Path(os.environ.get("VM_DIRS", "/nonexistent"))]
+    # only standard locations and whatever the user points at with VM_DIRS:
+    #   VM_DIRS="D:\vms;E:\lab"  (Windows uses ';', Linux ':')
+    roots: list[Path] = []
+    if IS_WIN:
+        roots += [Path.home() / "Documents" / "Virtual Machines",
+                  Path.home() / "Virtual Machines"]
+    for chunk in os.environ.get("VM_DIRS", "").split(os.pathsep):
+        if chunk.strip():
+            roots.append(Path(chunk.strip()))
     for root in roots:
         if not root or not root.is_dir():
             continue
