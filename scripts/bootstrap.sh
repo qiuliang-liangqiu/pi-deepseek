@@ -116,6 +116,14 @@ for item in AGENTS.md agents bin extensions prompts knowledge skills; do
 done
 if [ "$DRY" = 0 ]; then
   chmod +x "$DEST"/bin/*.sh "$DEST"/bin/*.py 2>/dev/null || true
+  # 记录基线，便于以后 `bash scripts/update.sh` 做增量覆盖（不碰 auth/settings）
+  if [ -f "$REPO_ROOT/scripts/update.py" ]; then
+    if "$PY" "$REPO_ROOT/scripts/update.py" --agent-dir "$DEST" --record-only >/dev/null 2>&1; then
+      ok "baseline manifest written"
+    else
+      warn "could not write baseline manifest"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------- 4. settings / auth

@@ -195,6 +195,33 @@ python -m framework.cli panic
 cd toolbox && python -m unittest discover -s framework/tests -v
 ```
 
+## 更新已有安装
+
+装过之后再拿新版本，不要重跑 `bootstrap.sh` 全量覆盖（会碰你的配置），用增量更新：
+
+```bash
+bash scripts/update.sh                # git pull + 计划 + 询问 + 应用
+bash scripts/update.sh --dry-run      # 只看会改什么
+bash scripts/update.sh --keep-local   # 你改过的文件保留你的版本
+bash scripts/update.sh --no-pull      # 跳过 git pull（用当前 checkout）
+```
+
+它靠 `~/.pi/agent/.workbench.json`（安装时写的基线清单，记录每个文件的 sha256）判断：
+
+| 状态 | 含义 | 动作 |
+|---|---|---|
+| 新增 | 本地没有 | 直接装 |
+| 更新 | 本地 == 基线（你没改过） | 备份后覆盖 |
+| **冲突** | 本地 ≠ 基线（你改过） | 先存成 `<file>.local-<时间戳>`，再覆盖；`--keep-local` 则跳过 |
+| 无基线 | 旧版本装的，没有清单 | 备份后覆盖（先提示） |
+| 不变 | 内容一致 | 跳过 |
+
+**永远不碰**：`auth.json`、`settings.json`、`mcp.json`、`models*.json`、`toolkit.json`、
+`sessions/`、`teams/`、`backups/`，以及你在这些目录之外自己加的文件。
+
+覆盖前会把要改的文件备份到 `~/.pi/agent/backups/<时间戳>-update/`；更新后自动跑一次冒烟，
+失败会打印回滚命令。`--prune` 才会删除上游已移除的文件（默认保留）。
+
 ## 工具自检与按需安装
 
 CTF 工具缺什么不该靠猜。先选**装到哪个系统**（Windows 本机 / WSL-Ubuntu / WSL-Kali），

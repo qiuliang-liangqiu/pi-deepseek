@@ -117,6 +117,15 @@ cd /repo && python3 scripts/setup-tools.py --target ubuntu --yes --allow-sudo
 
 pwn 回连 / VPN 在容器里会受限，见 README 的说明。
 
+## 以后怎么更新
+
+```bash
+bash scripts/update.sh              # 拉最新 + 增量覆盖（不碰你的 auth/settings）
+bash scripts/update.sh --dry-run    # 只看会改什么
+```
+
+你改过的文件会先存成 `<file>.local-<时间戳>` 再覆盖；要保留自己的版本用 `--keep-local`。
+
 ## 验证（三步，缺一不可）
 
 ```bash

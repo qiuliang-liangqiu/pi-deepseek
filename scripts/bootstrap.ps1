@@ -107,6 +107,10 @@ foreach ($item in @("AGENTS.md", "agents", "bin", "extensions", "prompts", "know
     Do-It { Copy-Item -Path $src -Destination (Join-Path $Dest $item) -Recurse -Force } "copy $item"
     Ok $item
 }
+if (-not $DryRun -and (Test-Path (Join-Path $RepoRoot "scripts\update.py"))) {
+    & $Python (Join-Path $RepoRoot "scripts\update.py") --agent-dir $Dest --record-only *> $null
+    if ($LASTEXITCODE -eq 0) { Ok "baseline manifest written" } else { Warn "could not write baseline manifest" }
+}
 
 # ---------------------------------------------------------------- 4. settings / auth
 Write-Step 4 "settings"

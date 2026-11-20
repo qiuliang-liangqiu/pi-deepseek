@@ -96,3 +96,4 @@ closes and the next reopen starts cold.
 - Do not close a box 30 seconds after a correct flag when the paper has two
   flags per challenge — but do not fight the auto-close either; submit the
   second flag before the window ends.
+# repo change
