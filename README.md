@@ -412,6 +412,40 @@ pi 对 DeepSeek 有专门适配（`thinkingFormat: "deepseek"`、
 - **Windows**：路径/编码按 Windows 实测定型（UTF-8 输出、CRLF 兼容），Linux/macOS 也可用。
 - **报告**：只保留 markdown，docx/pdf 原件未复制（体积）；`build_*.py` 可重建。
 
+## 自带的虚拟电脑（不需要对方装任何虚拟机软件）
+
+`scripts/portable-vm.py` 用 **QEMU + Ubuntu cloud image** 起一台机器，全部放在 `~/.pi/vm`，
+不需要 VMware / VirtualBox / WSL / Docker：
+
+```bash
+python scripts/portable-vm.py check      # 缺什么（qemu / 镜像 / 磁盘）
+python scripts/portable-vm.py setup      # 下载镜像（约 600 MB，国内镜像站）
+python scripts/portable-vm.py start      # 后台启动，等 SSH 就绪
+python scripts/setup-tools.py --target ubuntu --ssh-host 127.0.0.1 --ssh-port 2222 --ssh-user pi
+python scripts/portable-vm.py stop
+```
+
+技术上是怎么做到"免安装 seed"的：cloud-init 的 NoCloud 数据源支持从 **SMBIOS 序列号**
+读取 `ds=nocloud;s=http://10.0.2.2:PORT/`，所以宿主起一个只读小 HTTP 服务就够了，
+不用生成 seed.iso。QEMU 把 guest 的 22 转发到 `127.0.0.1:2222`，账号 `pi / pi`。
+
+| 项 | 值 |
+|---|---|
+| 磁盘占用 | 镜像 600 MB + 覆盖盘（按需增长，默认上限同基础镜像） |
+| 启动时间 | 约 60–90 秒到 SSH 就绪（首启 cloud-init 更久） |
+| 加速 | 有 WHPX 时接近原生；否则 tcg 软件模拟，慢 5–10 倍 |
+| 网络 | QEMU user-net（NAT）：出站正常，**入站/回连需要额外 hostfwd** |
+
+### 四种"去哪跑工具"的取舍
+
+| | 自带 QEMU | WSL2 | Docker | 已有虚拟机 |
+|---|---|---|---|---|
+| 对方要装什么 | 无（脚本自下） | 一次 UAC + 重启 | Docker Desktop | 已有 |
+| 速度 | 中（WHPX 好，tcg 差） | 原生 | 近原生 | 原生 |
+| pwn 回连 | 需 hostfwd | 视网络模式 | ❌ NAT | ✅ |
+| VPN | 需在 guest 里配 | 需 mirrored | ❌ | ✅ 宿主 |
+| 隔离 | 强（整机） | 中 | 中 | 强 |
+
 ## 怎么交给别人（交接包）
 
 ```bash

@@ -833,6 +833,25 @@ def remember_vm(target: Target, dry: bool) -> None:
         print(f"  (vm.env 没写成功：{exc})")
 
 
+def ensure_apt_updated(target: "Target", dry: bool) -> bool:
+    """Fresh cloud images ship with empty apt lists: update once before installing."""
+    if dry:
+        return True
+    if target.kind == "docker":
+        cmd = "apt-get update -qq"
+        rc, _ = exec_in(target, cmd, timeout=900)
+    elif target.kind == "wsl":
+        rc, _ = exec_in(target, "apt-get update -qq", timeout=900)
+    elif target.kind == "ssh":
+        rc, _ = exec_in(target, "sudo -n apt-get update -qq", timeout=900)
+        if rc != 0:
+            rc, _ = exec_in(target, "apt-get update -qq", timeout=900)
+    else:
+        rc, _ = run(["bash", "-lc", "sudo -n apt-get update -qq"], timeout=900)
+    print("    apt-get update: " + ("ok" if rc == 0 else f"exit {rc}"))
+    return rc == 0
+
+
 def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> list[str]:
     todo = [r for r in rows if not r["installed"]]
     if not todo:
@@ -841,6 +860,8 @@ def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> li
 
     apt_pkgs = [p for r in todo if r["available"] for p in r["pkgs"]]
     failed: list[str] = []
+    if apt_pkgs and target.kind in ("ssh", "wsl", "docker"):
+        ensure_apt_updated(target, dry)
 
     if target.kind == "winget":
         for r in todo:
@@ -895,12 +916,18 @@ def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> li
             if not dry:
                 if target.kind == "ssh":
                     pw = _SSH_PW.get(target.alias or target.host or "", "")
-                    if pw and "sudo " in cmd:            # 无 TTY，用 sudo -S 喂密码
-                        cmd2 = cmd.replace("sudo ", "sudo -S -p '' ", 1)
+                    if pw:                               # 无 TTY，用 sudo -S 喂密码
+                        cmd2 = "sudo -S -p '' " + cmd
                         print("      （sudo 用同一密码，经 stdin 传入）")
                         rc, _ = exec_in(target, cmd2, timeout=1800, stdin_text=pw + chr(10))
                     else:
-                        rc, _ = exec_in(target, cmd, timeout=1800, tty=True)
+                        # 免密 sudo 就用 -n；否则退回带 TTY 的交互 sudo
+                        rc_n, _ = exec_in(target, "sudo -n true", timeout=30)
+                        if rc_n == 0:
+                            rc, _ = exec_in(target, "sudo -n " + cmd, timeout=1800)
+                        else:
+                            print("      （需要 sudo 密码：请在终端里交互，或配 NOPASSWD）")
+                            rc, _ = exec_in(target, "sudo " + cmd, timeout=1800, tty=True)
                 else:
                     rc, _ = exec_in(target, cmd, timeout=1800)
                 if rc != 0:
@@ -1146,7 +1173,28 @@ def main() -> int:
 
     todo = [r for r in rows if not r["installed"]]
     if not todo:
+        print("  全部已安装")
         remember_vm(target, args.dry_run)
+        return 0
+
+    if not args.yes and not args.dry_run:
+        try:
+            ans = input(f"\n安装以上 {len(todo)} 项？[Y/n] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            ans = "n"
+        if ans == "n":
+            print("skipped")
+            return 0
+
+    failed = install(target, rows, args.allow_sudo, args.dry_run)
+    if failed:
+        print(f"\n失败/未装：{', '.join(sorted(set(failed)))}")
+        print("可重试：python scripts/setup-tools.py --target "
+              f"{target.key} --only {','.join(sorted(set(failed)))}")
+        return 1
+
+    remember_vm(target, args.dry_run)
+
     if not args.dry_run:
         if target.kind == "docker":
             print(chr(10) + "完成。容器：" + target.container + "（工具都在里面）")
