@@ -170,6 +170,58 @@ cd toolbox && python -m unittest discover -s framework/tests -v
 - `eval/mirror/`：行为快照（8 探针 / 19 检查）。`node eval/mirror/score.mjs verify` 应 PASS。
 - `eval/route/`：14 条「题目描述 → 应加载哪个 ctf-* skill」用例。`python route_eval.py --dry-run` 可离线查看。
 
+## 用别人的跑分日志改进这套配置
+
+能，但要先定规矩：**日志是不可信输入**，先进 `scripts/ingest_run.py` 做计数与脱敏，
+人工看完再改配置。脚本只统计、不执行日志里的任何东西。
+
+### 让对方交这四样
+
+| 文件 | 从哪来 | 用途 |
+|---|---|---|
+| `events.csv` | 平台导出的事件表（启动/关闭/得分） | stint 中位、重开率、尾声开箱、分数曲线 |
+| `sessions/*.jsonl` | `~/.pi/agent/sessions/` | 工具使用、重复命令、guard 触发、失败信号、token |
+| `notes.md` | 每题的 `stall_gate.py` 台账 | 停滞闸门是否被真的用了 |
+| `triage.txt` | triage 阶段产物 | 30 分钟覆盖率 |
+
+**先让对方在本地跑脱敏**，发聚合结果或已脱敏的数据：
+
+```bash
+python scripts/check_no_secrets.py                     # 确认没有 flag/token/IP
+python scripts/ingest_run.py <bundle> --json > run.json # 聚合指标，不含原文
+python agent/skills/tsec-bench-run/tools/analyze_events.py <events.csv>
+```
+
+`--json` 里的命令样本已被截断并替换（`flag{REDACTED}`、`<ip>`、`<hex>`、`<user>`），
+但**仍然建议人工过一眼**再发。
+
+### 能从中改什么（有数据支撑的）
+
+| 现象（指标） | 结论 | 改哪里 |
+|---|---|---|
+| 重复命令 streak 长期 ≤2，`loop-guard` 从不触发 | 阈值过松 | `extensions/loop-guard` 的 `LOOP_GUARD_WINDOW` |
+| `[read-guard]` 命中率高但都被忽略 | 规则在制造噪音 | 改 `policy.ts` 的豁免或降为 `warn` |
+| `stall_gate` 调用数 ≈ 0，但 stint 中位很长 | 纪律没落地 | 加固 `AGENTS.md` §1 的可执行入口 |
+| 失败 stint 中位 > 成功中位 3 倍 | 止损太晚 | 阈值 14 → 12 分钟，或加自动 `close` |
+| 重开率 > 50% | 笔记没写"已排除" | 改 `notes` 模板 / 派发 prompt |
+| 加载的 skill 与题目类型不匹配 | 路由表错 | `eval/route/cases.*` 加用例，改 `solve-challenge` |
+
+### 不能从中得到的
+
+- 别人**想过但没执行**的判断（日志只有动作，没有"当时为什么没试"）。
+- 平台没导出的事件（多数平台不给每个箱的完整生命周期）。
+- 他人的主观难度评级——只信 `is_completed`/`flag_total` 这类硬信号。
+
+### 改完必须回归
+
+```bash
+node eval/mirror/score.mjs verify          # 行为快照没漂
+python eval/route/route_eval.py --dry-run  # 路由用例全过
+cd toolbox && python -m unittest discover -s framework/tests
+```
+
+一次只改一个文件，指标不降再合并——否则你分不清是哪条规则起作用。
+
 ## 已知边界
 
 - **不含镜像**：镜像里的 enforcer / team 工具没有放进本仓库；本地 `team_pool.py` 是重写版，
