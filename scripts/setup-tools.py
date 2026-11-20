@@ -815,6 +815,24 @@ def handle_windows_gaps(missing: list[str], args) -> Target | None:
 
 
 # --------------------------------------------------------------------- install
+def remember_vm(target: Target, dry: bool) -> None:
+    """Write ~/.pi/agent/vm.env so scripts/vt.sh can ssh into this box later."""
+    if target.kind != "ssh" or dry:
+        return
+    agent_dir = Path(os.environ.get("PI_AGENT_DIR") or (Path.home() / ".pi" / "agent"))
+    try:
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        (agent_dir / "vm.env").write_text(
+            "PI_VM_HOST=" + (target.alias or target.host) + chr(10) +
+            "PI_VM_USER=" + (target.user or "") + chr(10) +
+            "PI_VM_PORT=" + str(target.port) + chr(10),
+            encoding="utf-8")
+        print(chr(10) + "已记录这台虚拟机 -> " + str(agent_dir / "vm.env"))
+        print("  之后跑命令： bash scripts/vt.sh nmap -sV <host>")
+    except OSError as exc:
+        print(f"  (vm.env 没写成功：{exc})")
+
+
 def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> list[str]:
     todo = [r for r in rows if not r["installed"]]
     if not todo:
@@ -1128,25 +1146,18 @@ def main() -> int:
 
     todo = [r for r in rows if not r["installed"]]
     if not todo:
-        return 0
-    if not args.yes and not args.dry_run:
-        try:
-            ans = input(f"\n安装以上 {len(todo)} 项？[Y/n] ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            ans = "n"
-        if ans == "n":
-            print("skipped")
-            return 0
-
-    failed = install(target, rows, args.allow_sudo, args.dry_run)
-    if failed:
-        print(f"\n失败/未装：{', '.join(sorted(set(failed)))}")
-        print("可重试：python scripts/setup-tools.py --target "
-              f"{target.key} --only {','.join(sorted(set(failed)))}")
-        return 1
+        remember_vm(target, args.dry_run)
     if not args.dry_run:
-        print("\n完成。验证：python scripts/setup-tools.py --target "
-              f"{target.key} --list")
+        if target.kind == "docker":
+            print(chr(10) + "完成。容器：" + target.container + "（工具都在里面）")
+            print("  跑命令： bash scripts/dt.sh nmap -sV <host>")
+            print("  交互 shell： bash scripts/dt.sh")
+            print("  注意：pwn 反向回连受容器 NAT 限制；要完整网络就用 WSL/VM。")
+        else:
+            print(chr(10) + "完成。验证：python scripts/setup-tools.py --target "
+                  + target.key + " --list")
+            if target.kind == "ssh":
+                print("  跑命令： bash scripts/vt.sh nmap -sV <host>")
     return 0
 
 

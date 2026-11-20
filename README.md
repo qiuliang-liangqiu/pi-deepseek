@@ -282,6 +282,22 @@ bash scripts/dt.sh gdb -q ./chall
 容器名 `pi-toolbox`，带 `SYS_PTRACE`/`NET_RAW` 权限，`/work` 是命名卷。pwn 反向回连受容器 NAT
 限制，需要完整网络时仍建议 WSL/VM。
 
+### 虚拟机：装完就能远程调用
+
+```bash
+# 装（会自己发现 VMware 虚拟机，或直接指定）
+python scripts/setup-tools.py --target ubuntu --ssh-host <ip> --ssh-user <user>
+
+# 装完自动写 ~/.pi/agent/vm.env，之后直接跑：
+bash scripts/vt.sh nmap -sV <host>
+bash scripts/vt.sh gdb -q ./chall
+bash scripts/vt.sh              # 交互 shell
+```
+
+虚拟机是三种去处里**最完整**的：ptrace、NET_RAW、pwn 反向回连、宿主 VPN 全部原生可用，
+不需要 Docker 的 cap 参数，也不需要 WSL 的重启。`scripts/vt.sh` 只是把 `ssh` 包了一层，
+目标从 `vm.env` 读（也可用 `PI_VM_HOST/PI_VM_USER` 覆盖）。
+
 底层目录仍是 `scripts/toolkit.py`（32 个工具，8 个类别），只执行包管理器命令，
 绝不 `curl | sh`、不从 releases 下二进制：
 
