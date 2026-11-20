@@ -451,25 +451,6 @@ python scripts/portable-vm.py stop
 | VPN | 需在 guest 里配 | 需 mirrored | ❌ | ✅ 宿主 |
 | 隔离 | 强（整机） | 中 | 中 | 强 |
 
-## 怎么交给别人（交接包）
-
-```bash
-python scripts/handover.py            # -> dist/pi-handover-<date>.tar.gz (~1.7 MB)
-```
-
-包里是**配置 + 安装器**，不是装好的环境：334 个文件 + 一份按你环境生成的 `INSTALL.md` + `SHA256SUMS`。
-收件人解包后：
-
-```bash
-bash scripts/bootstrap.sh --api       # 配置层：装进 ~/.pi/agent + 问 key + 验证
-python3 scripts/setup-tools.py        # 工具层：选 WSL/VM/Windows，装同一份 80 工具清单
-```
-
-为什么不是直接给虚拟机镜像：一台能用的 Linux VM 是 **几十 GB**（作者这台 117 GB），
-不适合传输；给"配方"让对方 10–20 分钟重建，效果等价且可验证（`setup-tools.py --list` 对比）。
-
-**带不走的**：平台 token、模型 key、VPN 配置、本机路径。`INSTALL.md` 末尾列了完整清单。
-
 ## 安全与授权
 
 仅用于你拥有明确授权的靶场、比赛或自建环境。仓库里的 payload、playbook 和自动化脚本都以此为前提；
