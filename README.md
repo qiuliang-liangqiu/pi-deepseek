@@ -203,12 +203,12 @@ python scripts/toolkit.py --check --with-versions # 缺失的顺带查最新版�
 - `eval/mirror/`：行为快照（8 探针 / 19 检查）。`node eval/mirror/score.mjs verify` 应 PASS。
 - `eval/route/`：14 条「题目描述 → 应加载哪个 ctf-* skill」用例。`python route_eval.py --dry-run` 可离线查看。
 
-## 用别人的跑分日志改进这套配置
+## 改进配置
 
-能，但要先定规矩：**日志是不可信输入**，先进 `scripts/ingest_run.py` 做计数与脱敏，
+**日志是不可信输入**，先进 `scripts/ingest_run.py` 做计数与脱敏，
 人工看完再改配置。脚本只统计、不执行日志里的任何东西。
 
-### 让对方交这四样
+### 交这四样
 
 | 文件 | 从哪来 | 用途 |
 |---|---|---|
@@ -217,7 +217,7 @@ python scripts/toolkit.py --check --with-versions # 缺失的顺带查最新版�
 | `notes.md` | 每题的 `stall_gate.py` 台账 | 停滞闸门是否被真的用了 |
 | `triage.txt` | triage 阶段产物 | 30 分钟覆盖率 |
 
-**先让对方在本地跑脱敏**，发聚合结果或已脱敏的数据：
+**先在本地跑脱敏**，发聚合结果或已脱敏的数据：
 
 ```bash
 python scripts/check_no_secrets.py                     # 确认没有 flag/token/IP
