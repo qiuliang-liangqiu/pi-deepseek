@@ -325,6 +325,9 @@ def cmd_start(args) -> int:
     (WORK / "pid").write_text(str(proc.pid), encoding="utf-8")
     say(f"== 已启动 pid={proc.pid}，等 SSH（最多 {args.wait}s）")
 
+    # 覆盖盘重建后 guest 的主机密钥会变，先清掉旧记录（这是我们自己的临时机器）
+    sh(["ssh-keygen", "-R", f"[127.0.0.1]:{args.ssh_port}"], timeout=30)
+
     deadline = time.time() + args.wait
     ready = False
     while time.time() < deadline:
@@ -350,6 +353,31 @@ def cmd_start(args) -> int:
 
 
 def cmd_stop(_args) -> int:
+    # 先优雅关机：直接 SIGTERM 会让 guest 的 ext4 处于写入中途，反复几次就会损坏
+    user = "pi"
+    envf = WORK / "vm.env"
+    if envf.exists():
+        for line in envf.read_text(encoding="utf-8").splitlines():
+            if line.startswith("PI_VM_USER="):
+                user = line.split("=", 1)[1].strip() or user
+    try:
+        rc, _ = sh(["ssh", "-p", str(SSH_PORT), "-o", "BatchMode=yes",
+                    "-o", "ConnectTimeout=5", f"{user}@127.0.0.1", "sudo -n poweroff"],
+                   timeout=30)
+        if rc == 0:
+            say("已发送 poweroff，等关机…")
+            pidf = WORK / "pid"
+            if pidf.exists():
+                pid = int(pidf.read_text().strip() or 0)
+                for _ in range(30):
+                    try:
+                        os.kill(pid, 0)
+                    except OSError:
+                        break
+                    time.sleep(1)
+    except Exception:
+        pass
+
     httpf = WORK / "http.pid"
     if httpf.exists():
         try:
@@ -366,8 +394,8 @@ def cmd_stop(_args) -> int:
     try:
         os.kill(pid, signal.SIGTERM)
         say(f"已停止 pid={pid}")
-    except OSError as exc:
-        say(f"停止失败：{exc}")
+    except OSError:
+        say("进程已退出（优雅关机完成）")
     pidf.unlink(missing_ok=True)
     return 0
 

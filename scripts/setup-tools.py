@@ -233,6 +233,7 @@ class Target:
     os_name: str = ""        # ubuntu | kali | debian | windows | linux
     image: str = ""           # docker image
     container: str = ""       # docker container name
+    provisioner: str = ""     # "qemu" when the box is provided by portable-vm.py
 
 
 def run(argv: list[str], timeout: int = 120, want_tty: bool = False,
@@ -384,6 +385,64 @@ def os_title(os_name: str) -> str:
         os_name, os_name or "Linux")
 
 
+PORTABLE = Path(__file__).resolve().parent / "portable-vm.py"
+QEMU_SSH_PORT = 2222
+QEMU_USER = "pi"
+
+
+def qemu_state() -> tuple[bool, bool, bool]:
+    """(portable-vm.py present, image present, VM currently running)"""
+    if not PORTABLE.exists():
+        return False, False, False
+    work = Path(os.environ.get("PI_VM_DIR") or (Path.home() / ".pi" / "vm"))
+    img = work / "noble-server-cloudimg-amd64.img"
+    pidf = work / "pid"
+    running = False
+    if pidf.exists():
+        try:
+            os.kill(int(pidf.read_text().strip() or 0), 0)
+            running = True
+        except (OSError, ValueError):
+            running = False
+    return True, img.exists(), running
+
+
+def qemu_ensure(args) -> bool:
+    """Provision (download) and start the bundled QEMU VM if needed."""
+    have_script, have_image, running = qemu_state()
+    if not have_script:
+        print("    ! 找不到 scripts/portable-vm.py")
+        return False
+    py = sys.executable
+    if not have_image:
+        print("    需要先下载 Ubuntu cloud image（约 600 MB，国内镜像约 8 MB/s）")
+        if args.dry_run:
+            print("    [dry-run] 会执行：portable-vm.py setup")
+        else:
+            if not args.yes:
+                try:
+                    if input("    现在下载？[Y/n] ").strip().lower() == "n":
+                        return False
+                except (EOFError, KeyboardInterrupt):
+                    return False
+            rc = subprocess.call([py, str(PORTABLE), "setup", "--yes"])
+            if rc != 0:
+                print("    ! 镜像准备失败")
+                return False
+    if not running:
+        if args.dry_run:
+            print("    [dry-run] 会执行：portable-vm.py start")
+            return True
+        print("    启动虚拟机（首次约 60–90 秒）…")
+        rc = subprocess.call([py, str(PORTABLE), "start",
+                              "--wait", str(max(120, args.startup_wait)),
+                              "--ssh-port", str(QEMU_SSH_PORT), "--user", QEMU_USER])
+        if rc != 0:
+            print("    ! 启动失败，看 ~/.pi/vm/console.log")
+            return False
+    return True
+
+
 def docker_ok() -> bool:
     """docker CLI present and daemon reachable."""
     if not shutil.which("docker"):
@@ -424,6 +483,12 @@ def docker_ensure(image: str, name: str = DOCKER_NAME, dry: bool = False) -> boo
 
 def targets() -> list[Target]:
     out: list[Target] = []
+    have_script, have_image, running = qemu_state()
+    if have_script:
+        state = "运行中" if running else ("已就绪" if have_image else "需下载镜像")
+        out.append(Target("qemu", f"自带 QEMU 虚拟机（Ubuntu，{state}）", "ssh", "qemu",
+                          host="127.0.0.1", port=QEMU_SSH_PORT, user=QEMU_USER,
+                          os_name="ubuntu", provisioner="qemu"))
     if IS_WIN:
         out.append(Target("windows", "Windows（本机 winget）", "winget", "host", os_name="windows"))
         if docker_ok():
@@ -705,9 +770,13 @@ def show_plan(rows: list[dict], target: Target) -> None:
         print("    1) WSL（推荐，一次 UAC）        wsl --install -d Ubuntu")
         print("    2) 已有虚拟机，走 SSH           需要 IP + 用户名")
         print("    3) MSYS2（gdb/binutils/gcc/make） winget install MSYS2.MSYS2 + pacman")
+        have_script, have_image, _ = qemu_state()
+        if have_script:
+            print("    4) 自带 QEMU 虚拟机（免装任何软件" +
+                  ("" if have_image else "，先下 600 MB 镜像") + "）")
         if docker_ok():
-            print("    4) Docker 容器（不需要重启，pwn 回连仍受限）")
-        print("    5) 跳过（这些工具先不用）")
+            print("    5) Docker 容器（不需要重启，pwn 回连仍受限）")
+        print("    6) 跳过（这些工具先不用）")
 
 
 # ------------------------------------------------------------ windows gaps
@@ -764,8 +833,8 @@ def handle_windows_gaps(missing: list[str], args) -> Target | None:
             pick = input("  > ").strip()
         except (EOFError, KeyboardInterrupt):
             return None
-        action = {"1": "wsl", "2": "vm", "3": "msys2", "4": "docker", "5": "skip",
-                  "": "skip"}.get(pick, "skip")
+        action = {"1": "wsl", "2": "vm", "3": "msys2", "4": "qemu", "5": "docker",
+                  "6": "skip", "": "skip"}.get(pick, "skip")
     else:
         print(f"\n  --win-gaps {action}")
 
@@ -784,6 +853,14 @@ def handle_windows_gaps(missing: list[str], args) -> Target | None:
     if action == "msys2":
         install_msys2(args.dry_run)
         return None
+
+    if action == "qemu":
+        t = Target("qemu", "自带 QEMU 虚拟机（Ubuntu）", "ssh", "qemu",
+                   host="127.0.0.1", port=QEMU_SSH_PORT, user=QEMU_USER,
+                   os_name="ubuntu", provisioner="qemu")
+        if not qemu_ensure(args):
+            return None
+        return t
 
     if action == "docker":
         if not docker_ok():
@@ -986,7 +1063,7 @@ def menu(ts: list[Target]) -> Target | None:
 # --------------------------------------------------------------------- main
 def main() -> int:
     try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     except Exception:
         pass
     ap = argparse.ArgumentParser(description=__doc__,
@@ -1007,7 +1084,9 @@ def main() -> int:
                     help="非交互选目标（第一个可用），但仍会问是否安装")
     ap.add_argument("--all-groups", action="store_true", help="(默认就是全部组)")
     ap.add_argument("--docker-image", default="ubuntu:24.04", help="镜像（默认 ubuntu:24.04）")
-    ap.add_argument("--win-gaps", default="", choices=["", "wsl", "vm", "msys2", "docker", "skip"],
+    ap.add_argument("--startup-wait", type=int, default=300, help="QEMU 启动等待秒数")
+    ap.add_argument("--win-gaps", default="",
+                    choices=["", "wsl", "vm", "msys2", "qemu", "docker", "skip"],
                     help="Windows 缺 Linux 专属工具时怎么办（不给就交互问）")
     ap.add_argument("--kali-meta", action="store_true",
                     help="Kali: 先装 kali-linux-headless（约 1.5GB，一次到位），再补齐差异")
@@ -1089,7 +1168,8 @@ def main() -> int:
             return 2
         chosen = pool[:1]
     elif args.yes or args.auto:
-        chosen = [t for t in ts if t.kind == "winget"] or ts[:1]
+        chosen = ([t for t in ts if t.provisioner == "qemu"] or
+                  [t for t in ts if t.kind == "winget"] or ts[:1])
     else:
         picked = menu(ts)
         chosen = [picked] if picked else []
@@ -1126,6 +1206,10 @@ def main() -> int:
             print(f"{target.label} 还没开机或拿不到 IP。启动它（vmrun start \"{target.vmx}\"）"
                   f"后重跑，或加 --ssh-host <ip>。")
             return 2
+    if target.kind == "ssh" and target.provisioner == "qemu" and not ssh_reachable(target, interactive=False):
+        print("虚拟机没起来或 SSH 还没就绪：python scripts/portable-vm.py start")
+        print("日志：~/.pi/vm/console.log")
+        return 2
     if target.kind == "ssh" and not ssh_reachable(target):
         hint = target.alias or f"{target.user + '@' if target.user else ''}{target.host}"
         print(f"SSH 连不上 {hint}。检查：虚拟机已开机、sshd 在跑、防火墙放行，或先配好免密：")
@@ -1134,6 +1218,10 @@ def main() -> int:
 
     if target.kind == "docker":
         if not docker_ensure(target.image or args.docker_image, target.container, args.dry_run):
+            return 1
+
+    if target.provisioner == "qemu":
+        if not qemu_ensure(args):
             return 1
 
     if args.kali_meta and (target.os_name or "").lower() == "kali":
