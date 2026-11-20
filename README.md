@@ -268,6 +268,19 @@ python scripts/setup-tools.py --install-wsl              # 没装 WSL 时帮你�
 | WSL: Ubuntu / Kali | `wsl.exe -l -q`（UTF-16 解码） | `wsl -d <distro> -u root`，无需 sudo |
 | VMware 虚拟机 | `vmrun list` + 扫 `Documents\Virtual Machines`（自定义目录用 `VM_DIRS`） | `ssh`：先用 `~/.ssh/config` 的密钥；**密钥不通就问密码**（不回显，可 `--ssh-password-file`）；拿不到 IP 会问，或 `--start-vm` 帮你开机 |
 | 本机 Linux | `/etc/os-release` | `apt-get`（需 `--allow-sudo`） |
+| Docker 容器 | `docker info` 可用时出现在菜单里 | 容器内 `apt-get`（root，无需 sudo） |
+
+Windows 上 gdb/patchelf/qemu-user 这类**没有 Windows 包**的工具，脚本会弹菜单让你选去处
+（WSL / 已有虚拟机走 SSH / MSYS2 / **Docker 容器** / 跳过）。选了 Docker 之后：
+
+```bash
+bash scripts/dt.sh nmap -sV <host>     # 在容器里跑任意工具
+bash scripts/dt.sh                     # 交互 shell
+bash scripts/dt.sh gdb -q ./chall
+```
+
+容器名 `pi-toolbox`，带 `SYS_PTRACE`/`NET_RAW` 权限，`/work` 是命名卷。pwn 反向回连受容器 NAT
+限制，需要完整网络时仍建议 WSL/VM。
 
 底层目录仍是 `scripts/toolkit.py`（32 个工具，8 个类别），只执行包管理器命令，
 绝不 `curl | sh`、不从 releases 下二进制：

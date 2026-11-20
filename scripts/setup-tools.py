@@ -231,6 +231,8 @@ class Target:
     alias: str = ""          # ssh config alias, if one matches the IP
     vmx: str = ""
     os_name: str = ""        # ubuntu | kali | debian | windows | linux
+    image: str = ""           # docker image
+    container: str = ""       # docker container name
 
 
 def run(argv: list[str], timeout: int = 120, want_tty: bool = False,
@@ -382,10 +384,51 @@ def os_title(os_name: str) -> str:
         os_name, os_name or "Linux")
 
 
+def docker_ok() -> bool:
+    """docker CLI present and daemon reachable."""
+    if not shutil.which("docker"):
+        return False
+    rc, _ = run(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=25)
+    return rc == 0
+
+
+DOCKER_NAME = "pi-toolbox"
+
+
+def docker_running(name: str = DOCKER_NAME) -> bool:
+    rc, out = run(["docker", "ps", "--filter", f"name=^{name}$", "--format", "{{.Names}}"], timeout=30)
+    return rc == 0 and name in out
+
+
+def docker_ensure(image: str, name: str = DOCKER_NAME, dry: bool = False) -> bool:
+    """Start a long-lived toolbox container (idempotent)."""
+    if docker_running(name):
+        return True
+    argv = ["docker", "run", "-d", "--name", name,
+            "--cap-add=SYS_PTRACE", "--cap-add=NET_RAW", "--cap-add=NET_ADMIN",
+            "-v", f"{name}-work:/work", "-w", "/work", image, "sleep", "infinity"]
+    print("    $ " + " ".join(argv))
+    if dry:
+        return True
+    rc, out = run(argv, timeout=1800)
+    if rc != 0:
+        print(f"    ! docker run 失败 (exit {rc})")
+        tail = [l for l in out.strip().splitlines() if l.strip()][-3:]
+        for l in tail:
+            print("      " + l[:140])
+        return False
+    rc, _ = run(["docker", "exec", name, "bash", "-lc", "apt-get update -qq"], timeout=1800)
+    print("    ok" if rc == 0 else f"    ! apt-get update 失败 (exit {rc})")
+    return rc == 0
+
+
 def targets() -> list[Target]:
     out: list[Target] = []
     if IS_WIN:
         out.append(Target("windows", "Windows（本机 winget）", "winget", "host", os_name="windows"))
+        if docker_ok():
+            out.append(Target("docker", "Docker 容器（Ubuntu，代为运行）", "docker", "docker",
+                              os_name="ubuntu", image="ubuntu:24.04", container=DOCKER_NAME))
     for d in wsl_dists():
         dl = d.lower()
         key = "wsl:" + d
@@ -500,6 +543,8 @@ def exec_in(target: Target, cmd: str, timeout: int = 120, tty: bool = False,
     if target.kind == "wsl":
         argv = ["wsl.exe", "-d", target.distro, "-u", "root", "--", "bash", "-lc", cmd]
         return run(argv, timeout=timeout)
+    if target.kind == "docker":
+        return run(["docker", "exec", target.container, "bash", "-lc", cmd], timeout=timeout)
     if target.kind == "ssh":
         if not (target.host or target.alias):
             return 2, "no ssh host"
@@ -538,6 +583,8 @@ def tool_pkgs(t: Tool, target: Target) -> list[str]:
         return [t.win] if t.win else []
     if target.kind == "brew":
         return t.brew
+    if target.kind == "docker":
+        return t.ubuntu
     if target.kind == "apt":
         return t.kali if "kali" in (target.distro or "") else t.ubuntu
     return t.kali if "kali" in (target.distro or "").lower() else t.ubuntu
@@ -658,7 +705,9 @@ def show_plan(rows: list[dict], target: Target) -> None:
         print("    1) WSL（推荐，一次 UAC）        wsl --install -d Ubuntu")
         print("    2) 已有虚拟机，走 SSH           需要 IP + 用户名")
         print("    3) MSYS2（gdb/binutils/gcc/make） winget install MSYS2.MSYS2 + pacman")
-        print("    4) 跳过（这些工具先不用）")
+        if docker_ok():
+            print("    4) Docker 容器（不需要重启，pwn 回连仍受限）")
+        print("    5) 跳过（这些工具先不用）")
 
 
 # ------------------------------------------------------------ windows gaps
@@ -715,7 +764,8 @@ def handle_windows_gaps(missing: list[str], args) -> Target | None:
             pick = input("  > ").strip()
         except (EOFError, KeyboardInterrupt):
             return None
-        action = {"1": "wsl", "2": "vm", "3": "msys2", "4": "skip", "": "skip"}.get(pick, "skip")
+        action = {"1": "wsl", "2": "vm", "3": "msys2", "4": "docker", "5": "skip",
+                  "": "skip"}.get(pick, "skip")
     else:
         print(f"\n  --win-gaps {action}")
 
@@ -734,6 +784,15 @@ def handle_windows_gaps(missing: list[str], args) -> Target | None:
     if action == "msys2":
         install_msys2(args.dry_run)
         return None
+
+    if action == "docker":
+        if not docker_ok():
+            print("    ! 没检测到可用的 docker（装 Docker Desktop 或换 WSL/VM）")
+            return None
+        t = Target("docker", "Docker 容器（Ubuntu，代为运行）", "docker", "docker",
+                   os_name="ubuntu", image=args.docker_image, container=DOCKER_NAME)
+        print("  之后用它跑工具：scripts/dt.sh nmap -sV <host>")
+        return t
 
     # vm
     host = args.ssh_host
@@ -782,6 +841,15 @@ def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> li
                 failed.append(t.id)
                 print(f"    ! {t.id} failed (exit {rc})")
         return failed
+
+    if target.kind == "docker" and apt_pkgs:
+        cmd = "LC_ALL=C apt-get install -y " + " ".join(sorted(set(apt_pkgs)))
+        print(f"    $ [docker] {cmd}")
+        if not dry:
+            rc, _ = exec_in(target, cmd, timeout=3600)
+            if rc != 0:
+                print(f"    ! apt failed (exit {rc})")
+        apt_pkgs = []
 
     if target.kind == "brew" and apt_pkgs:
         argv = ["brew", "install", *sorted(set(apt_pkgs))]
@@ -893,7 +961,8 @@ def main() -> int:
     ap.add_argument("--auto", action="store_true",
                     help="非交互选目标（第一个可用），但仍会问是否安装")
     ap.add_argument("--all-groups", action="store_true", help="(默认就是全部组)")
-    ap.add_argument("--win-gaps", default="", choices=["", "wsl", "vm", "msys2", "skip"],
+    ap.add_argument("--docker-image", default="ubuntu:24.04", help="镜像（默认 ubuntu:24.04）")
+    ap.add_argument("--win-gaps", default="", choices=["", "wsl", "vm", "msys2", "docker", "skip"],
                     help="Windows 缺 Linux 专属工具时怎么办（不给就交互问）")
     ap.add_argument("--kali-meta", action="store_true",
                     help="Kali: 先装 kali-linux-headless（约 1.5GB，一次到位），再补齐差异")
@@ -1017,6 +1086,10 @@ def main() -> int:
         print(f"SSH 连不上 {hint}。检查：虚拟机已开机、sshd 在跑、防火墙放行，或先配好免密：")
         print(f"  ssh-copy-id {hint}")
         return 2
+
+    if target.kind == "docker":
+        if not docker_ensure(target.image or args.docker_image, target.container, args.dry_run):
+            return 1
 
     if args.kali_meta and (target.os_name or "").lower() == "kali":
         cmd = "LC_ALL=C apt-get install -y kali-linux-headless"
