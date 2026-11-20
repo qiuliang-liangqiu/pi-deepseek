@@ -1,0 +1,3 @@
+default provider: deepseek
+default model: deepseek-flash
+default thinking level: max

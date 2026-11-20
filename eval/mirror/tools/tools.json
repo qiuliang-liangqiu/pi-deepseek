@@ -1,0 +1,229 @@
+[
+  {
+    "name": "read",
+    "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.\n\nCodemode: `tools.read(args)` resolves to `string | { data: string; mimeType: string; note: string; type: \"image\"; }`.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the file to read (relative or absolute)"
+        },
+        "offset": {
+          "type": "number",
+          "description": "Line number to start reading from (1-indexed)"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Maximum number of lines to read"
+        }
+      }
+    },
+    "constrainedSampling": {
+      "type": "json_schema",
+      "strict": "prefer"
+    }
+  },
+  {
+    "name": "bash",
+    "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.\n\nCodemode: `tools.bash(args)` resolves to `{ output, truncated, full_output_path?, exit_code, wall_time_seconds }`.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Shell command to execute"
+        },
+        "timeout": {
+          "type": "number",
+          "description": "Timeout in seconds (optional, no default timeout)"
+        }
+      }
+    },
+    "constrainedSampling": {
+      "type": "json_schema",
+      "strict": "prefer"
+    }
+  },
+  {
+    "name": "edit",
+    "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.\n\nCodemode: `tools.edit(args)` resolves to a string.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "path",
+        "edits"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the file to edit (relative or absolute)"
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "oldText",
+              "newText"
+            ],
+            "properties": {
+              "oldText": {
+                "type": "string",
+                "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+              },
+              "newText": {
+                "type": "string",
+                "description": "Replacement text for this targeted edit."
+              }
+            }
+          },
+          "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+        }
+      }
+    },
+    "constrainedSampling": {
+      "type": "json_schema",
+      "strict": "prefer"
+    }
+  },
+  {
+    "name": "write",
+    "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.\n\nCodemode: `tools.write(args)` resolves to a string.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "path",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the file to write (relative or absolute)"
+        },
+        "content": {
+          "type": "string",
+          "description": "Content to write to the file"
+        }
+      }
+    },
+    "constrainedSampling": {
+      "type": "json_schema",
+      "strict": "prefer"
+    }
+  },
+  {
+    "name": "subagent",
+    "description": "Delegate tasks to specialized subagents with isolated context. Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder). Default agent scope is \"user\" (from ~\\.pi\\agent\\agents). To enable project-local agents in .pi/agents, set agentScope: \"both\" (or \"project\").\n\nCodemode: `tools.subagent(args)` resolves to a string.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string",
+          "description": "Name of the agent to invoke (for single mode)"
+        },
+        "task": {
+          "type": "string",
+          "description": "Task to delegate (for single mode)"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "agent",
+              "task"
+            ],
+            "properties": {
+              "agent": {
+                "type": "string",
+                "description": "Name of the agent to invoke"
+              },
+              "task": {
+                "type": "string",
+                "description": "Task to delegate to the agent"
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory for the agent process"
+              }
+            }
+          },
+          "description": "Array of {agent, task} for parallel execution"
+        },
+        "chain": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "agent",
+              "task"
+            ],
+            "properties": {
+              "agent": {
+                "type": "string",
+                "description": "Name of the agent to invoke"
+              },
+              "task": {
+                "type": "string",
+                "description": "Task with optional {previous} placeholder for prior output"
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory for the agent process"
+              }
+            }
+          },
+          "description": "Array of {agent, task} for sequential execution"
+        },
+        "agentScope": {
+          "type": "string",
+          "enum": [
+            "user",
+            "project",
+            "both"
+          ],
+          "description": "Which agent directories to use. Default: \"user\". Use \"both\" to include project-local agents.",
+          "default": "user"
+        },
+        "confirmProjectAgents": {
+          "type": "boolean",
+          "description": "Prompt before running project-local agents. Default: true.",
+          "default": true
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Working directory for the agent process (single mode)"
+        }
+      }
+    }
+  },
+  {
+    "name": "codemode",
+    "description": "Run JavaScript that calls other tools. The input is raw JavaScript (not JSON, no code fence), run as an async function body in a QuickJS sandbox: top-level `await` and `return` work. No Node, file system, network, or timers.\n- `await tools.<name>({ ...args })` resolves to a string, or an object if the tool's declaration says so, and rejects with an Error on failure. A tool whose declaration returns an object resolves on failure too when it returned that object; check its fields. Calls still running when the script ends are cancelled.\n- Optional first line: `// @options: {\"max_output_tokens\": 10000, \"timeout_ms\": 60000}`\n\nGlobals:\n- `text(value)`, `image(dataUrlOrImageBlock)`, `console.log(...)`, and top-level `return` add output; `exit()` ends the script. With several text items, each starts with a `==> text N/M <==` line, and `console` lines follow the other output in one `<console_output>` block. `image()` also saves the image to a temp file and the result names its path.\n- `store(key, value)` and `load(key)` keep JSON values across codemode calls.\n- `ALL_TOOLS`, `await searchTools(query, { limit?, namespace? })`, `await describeTool(name)`, `await describeNamespace(name)`: find unlisted tools, such as MCP tools.\n- `models`: classifiers and image generation. Read ~\\.pi\\agent\\install\\releases\\1.5.2\\node_modules\\@earendil-works\\pi-coding-agent\\docs\\codemode.md first.",
+    "parameters": {
+      "type": "object",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Raw JavaScript source."
+        }
+      }
+    },
+    "constrainedSampling": {
+      "type": "grammar",
+      "variants": {
+        "openai_lark": "\nstart: options_source | plain_source\noptions_source: OPTIONS_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nOPTIONS_LINE: /[ \\t]*\\/\\/ @options:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n"
+      }
+    }
+  }
+]

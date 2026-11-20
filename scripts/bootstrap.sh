@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# One-shot setup for pi-agent workbench (Linux / macOS / Git-Bash on Windows).
+#
+#   bash scripts/bootstrap.sh              # install + smoke test
+#   bash scripts/bootstrap.sh --dry-run    # show what would happen
+#   bash scripts/bootstrap.sh --no-smoke   # skip smoke tests
+#   bash scripts/bootstrap.sh --yes        # non-interactive (no prompts)
+#
+# Idempotent: re-running backs up the previous agent dir and reinstalls.
+# Never touches auth.json / settings.json / mcp.json (only creates examples' copies).
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEST="${PI_AGENT_DIR:-$HOME/.pi/agent}"
+DRY=0; SMOKE=1; YES=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY=1 ;;
+    --no-smoke) SMOKE=0 ;;
+    --yes|-y) YES=1 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    *) echo "unknown flag: $arg" >&2; exit 2 ;;
+  esac
+done
+
+c() { printf '\033[%sm%b\033[0m\n' "$1" "$2"; }
+ok() { c "32" "  ✓ $*"; }
+warn() { c "33" "  ! $*"; }
+die() { c "31" "  ✗ $*"; exit 1; }
+run() { if [ "$DRY" = 1 ]; then echo "    [dry-run] $*"; else "$@"; fi; }
+
+c "1;36" "pi-agent workbench bootstrap"
+echo "    repo:  $REPO_ROOT"
+echo "    agent: $DEST"
+[ "$DRY" = 1 ] && warn "dry-run: nothing will be written"
+
+# ---------------------------------------------------------------- 1. prerequisites
+c "1;36" "\n[1/6] prerequisites"
+PY=""
+for candidate in python3 python; do
+  if command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
+done
+[ -n "$PY" ] || die "python3 not found (needed by bin/*.py and toolbox)"
+PYVER="$($PY -c 'import sys;print("%d.%d"%sys.version_info[:2])')"
+case "$PYVER" in
+  3.8|3.9|3.1[0-9]) ok "python $PYVER ($PY)" ;;
+  *) die "python $PYVER too old (need >= 3.8)" ;;
+esac
+
+NODE_BIN=""; NODE_VER=""
+if command -v node >/dev/null 2>&1; then NODE_BIN="node"; NODE_VER="$(node -v)"; fi
+if [ -n "$NODE_BIN" ]; then ok "node $NODE_VER"; else warn "node not found — eval/mirror checks will be skipped"; fi
+
+if command -v pi >/dev/null 2>&1; then
+  ok "pi $(pi --version 2>/dev/null | head -1)"
+else
+  warn "pi not on PATH"
+  echo "      install: npm install -g @earendil-works/pi-coding-agent"
+  echo "      (config below is still installed; smoke tests that need pi are skipped)"
+fi
+command -v git >/dev/null 2>&1 && ok "git $(git --version | awk '{print $3}')" || warn "git not found (optional)"
+
+# ---------------------------------------------------------------- 2. backup
+c "1;36" "\n[2/6] backup existing agent dir"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+BACKUP="$DEST/backups/$STAMP-install"
+if [ -d "$DEST" ] && [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
+  run mkdir -p "$BACKUP"
+  for item in AGENTS.md agents bin extensions prompts skills knowledge; do
+    [ -e "$DEST/$item" ] || continue
+    run mv "$DEST/$item" "$BACKUP/$item"
+    ok "backed up $item"
+  done
+else
+  ok "nothing to back up"
+fi
+
+# ---------------------------------------------------------------- 3. install
+c "1;36" "\n[3/6] install agent/ -> $DEST"
+run run mkdir -p "$DEST"
+for item in AGENTS.md agents bin extensions prompts knowledge skills; do
+  [ -e "$REPO_ROOT/agent/$item" ] || continue
+  run cp -a "$REPO_ROOT/agent/$item" "$DEST/$item"
+  ok "$item"
+done
+if [ "$DRY" = 0 ]; then
+  chmod +x "$DEST"/bin/*.sh "$DEST"/bin/*.py 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------- 4. settings / auth
+c "1;36" "\n[4/6] settings"
+if [ -f "$DEST/settings.json" ]; then
+  ok "settings.json exists (left untouched)"
+else
+  if [ -f "$REPO_ROOT/examples/settings.example.json" ]; then
+    run cp "$REPO_ROOT/examples/settings.example.json" "$DEST/settings.json"
+    ok "created settings.json from example — edit provider/model"
+  fi
+fi
+if [ -f "$DEST/auth.json" ]; then
+  ok "auth.json exists (left untouched)"
+else
+  warn "no auth.json — put your model key there (see examples/README.md)"
+fi
+[ -f "$DEST/mcp.json" ] && ok "mcp.json exists (left untouched)" || true
+
+# ---------------------------------------------------------------- 5. PI_WORKBENCH
+c "1;36" "\n[5/6] PI_WORKBENCH"
+if [ "$DRY" = 0 ]; then
+  mkdir -p "$DEST"
+  printf 'export PI_WORKBENCH="%s"\n' "$REPO_ROOT/toolbox" > "$DEST/workbench.env"
+fi
+ok "wrote $DEST/workbench.env"
+RC=""
+case "$(basename "${SHELL:-bash}")" in
+  zsh) RC="$HOME/.zshrc" ;;
+  *)   RC="$HOME/.bashrc" ;;
+esac
+MARK="# >>> pi-agent workbench >>>"
+if [ -f "$RC" ] && grep -qF "$MARK" "$RC" 2>/dev/null; then
+  ok "$RC already sources workbench.env"
+else
+  if [ "$YES" = 1 ] || { [ "$DRY" = 0 ] && [ -t 0 ] && \
+       { printf "    append to %s? [Y/n] " "$RC"; read -r a; case "$a" in n|N) false;; *) true;; esac; }; }; then
+    if [ "$DRY" = 0 ]; then
+      { echo ""; echo "$MARK"; echo "[ -f \"$DEST/workbench.env\" ] && . \"$DEST/workbench.env\""; echo "# <<< pi-agent workbench <<<"; } >> "$RC"
+    fi
+    ok "updated $RC"
+  else
+    warn "skipped; add manually:  source $DEST/workbench.env"
+  fi
+fi
+export PI_WORKBENCH="$REPO_ROOT/toolbox"
+
+# ---------------------------------------------------------------- 6. smoke
+c "1;36" "\n[6/6] smoke tests"
+FAIL=0
+smoke() { # name, command...   (exit 0 = pass)
+  local name="$1"; shift
+  if [ "$DRY" = 1 ]; then echo "    [dry-run] $name"; return; fi
+  if "$@" >/dev/null 2>&1; then ok "$name"; else warn "FAILED: $name"; FAIL=1; fi
+}
+smoke_codes() { # name, allowed-codes, command...
+  local name="$1" allowed="$2"; shift 2
+  if [ "$DRY" = 1 ]; then echo "    [dry-run] $name"; return; fi
+  local rc=0
+  "$@" >/dev/null 2>&1 || rc=$?
+  case " $allowed " in *" $rc "*) ok "$name" ;; *) warn "FAILED: $name (exit $rc)"; FAIL=1 ;; esac
+}
+smoke "scan_injection --help" "$PY" "$DEST/bin/scan_injection.py" --help
+smoke_codes "stall_gate show" "0 1 2" "$PY" "$DEST/bin/stall_gate.py" show /tmp/pi-bootstrap-nonexistent
+smoke "triage_gate status"    "$PY" "$DEST/bin/triage_gate.py" status
+smoke "framework cli --help"  env PYTHONPATH="$REPO_ROOT/toolbox" "$PY" -m framework.cli --help
+smoke "no-secrets check"      "$PY" "$REPO_ROOT/scripts/check_no_secrets.py" --quiet
+if [ -n "$NODE_BIN" ] && [ -f "$REPO_ROOT/eval/mirror/score.mjs" ]; then
+  smoke "eval/mirror verify" "$NODE_BIN" "$REPO_ROOT/eval/mirror/score.mjs" verify
+fi
+
+# ---------------------------------------------------------------- summary
+echo
+if [ "$FAIL" = 1 ]; then
+  c "33" "bootstrap finished with warnings — see FAILED lines above"
+else
+  c "32" "bootstrap OK"
+fi
+cat <<EOF
+
+  agent dir : $DEST
+  backup    : $BACKUP  (if anything was replaced)
+  workbench : export PI_WORKBENCH="$REPO_ROOT/toolbox"
+
+  next:
+    1) edit $DEST/settings.json (provider/model)
+    2) put the model key in $DEST/auth.json  (see examples/README.md)
+    3) restart pi, then:  /reload
+    4) doctor:  $PY $REPO_ROOT/scripts/doctor.py
+EOF
+[ "$FAIL" = 1 ] && exit 1 || exit 0

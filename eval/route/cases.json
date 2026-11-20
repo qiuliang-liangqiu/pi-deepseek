@@ -1,0 +1,137 @@
+[
+  {
+    "id": "web-jwt-upload",
+    "tier": "smoke",
+    "expect": "ctf-web",
+    "forbid": [
+      "ctf-pwn",
+      "ctf-reverse"
+    ],
+    "task": "靶场是一个 Flask 站点：JWT cookie 会话、头像上传表单、admin bot 会访问用户提交的 URL；个人页疑似 SSTI，评论区疑似存储型 XSS。先讲清你会怎么开局。"
+  },
+  {
+    "id": "pwn-heap-uaf",
+    "tier": "smoke",
+    "expect": "ctf-pwn",
+    "forbid": [
+      "ctf-web",
+      "ctf-reverse"
+    ],
+    "task": "已经确认一个 ELF 服务存在 heap use-after-free，并且拿到 libc leak，目标是用 tcache poisoning 接 ROP 拿 shell。"
+  },
+  {
+    "id": "pwn-fmt-string",
+    "tier": "smoke",
+    "expect": "ctf-pwn",
+    "forbid": [
+      "ctf-reverse",
+      "ctf-web"
+    ],
+    "task": "32 位 ELF，No PIE、Partial RELRO，输入点有格式化字符串漏洞，需要 leak canary 和 libc 后写 GOT。"
+  },
+  {
+    "id": "reverse-vm",
+    "tier": "smoke",
+    "expect": "ctf-reverse",
+    "forbid": [
+      "ctf-pwn",
+      "ctf-misc"
+    ],
+    "task": "附件是一个未知字节码虚拟机的解释器（checker.py + 一段 opcode 字节码），要求还原它校验的输入算法。"
+  },
+  {
+    "id": "misc-pyjail",
+    "tier": "smoke",
+    "expect": "ctf-misc",
+    "forbid": [
+      "ctf-pwn",
+      "ctf-web"
+    ],
+    "task": "只能连到一个 Python REPL，builtins 被删了大半，过滤了 os/sys/import，需要读 flag 文件。"
+  },
+  {
+    "id": "crypto-rsa-hastad",
+    "tier": "full",
+    "expect": "ctf-crypto",
+    "forbid": [
+      "ctf-pwn",
+      "ctf-misc"
+    ],
+    "task": "给 3 组 RSA 公钥和同一明文的密文，e=3，怀疑是 Håstad 广播攻击；之后还要伪造一个 PKCS#1 v1.5 签名。"
+  },
+  {
+    "id": "crypto-lattice",
+    "tier": "full",
+    "expect": "ctf-crypto",
+    "forbid": [
+      "ctf-reverse"
+    ],
+    "task": "题目给了 LWE 采样 (A, b)，维数 64，需要恢复私钥 s；环境里有 sage。"
+  },
+  {
+    "id": "forensics-pcap-dns",
+    "tier": "full",
+    "expect": "ctf-forensics",
+    "forbid": [
+      "ctf-web"
+    ],
+    "task": "抓到一个 pcap，里面只有 DNS 查询和响应，怀疑是 DNS 隧道带出数据。"
+  },
+  {
+    "id": "forensics-memdump",
+    "tier": "full",
+    "expect": "ctf-forensics",
+    "forbid": [
+      "ctf-pwn"
+    ],
+    "task": "给了一个 Windows 内存镜像，需要找出进程列表、命令行和被删除的文件内容。"
+  },
+  {
+    "id": "osint-geo",
+    "tier": "full",
+    "expect": "ctf-osint",
+    "forbid": [
+      "ctf-forensics",
+      "ctf-misc"
+    ],
+    "task": "只有一张街景照片，要定位拍摄地点的经纬度（有路牌、店招和山脊线）。"
+  },
+  {
+    "id": "malware-dotnet-c2",
+    "tier": "full",
+    "expect": "ctf-malware",
+    "forbid": [
+      "ctf-pwn"
+    ],
+    "task": "附件是一个 .NET 加载器样本，运行后会回连 C2，需要提取配置和通信协议并解密 payload。"
+  },
+  {
+    "id": "ai-llm-prompt-leak",
+    "tier": "full",
+    "expect": "ctf-ai-ml",
+    "forbid": [
+      "ctf-misc"
+    ],
+    "task": "题目给了一个 LLM 聊天接口，系统提示里放着 flag，需要用提示注入/越狱把它套出来。"
+  },
+  {
+    "id": "misc-layered-encoding",
+    "tier": "full",
+    "expect": "ctf-misc",
+    "forbid": [
+      "ctf-crypto",
+      "ctf-reverse"
+    ],
+    "task": "附件是一串多层编码（base64 -> gzip -> 自定义替换表），没有别的线索，最终要还原出明文。"
+  },
+  {
+    "id": "web-sqli-waf",
+    "tier": "full",
+    "expect": "ctf-web",
+    "forbid": [
+      "ctf-crypto",
+      "ctf-misc"
+    ],
+    "task": "登录接口有 SQL 注入但 WAF 拦了 UNION 和空格，报错被关掉，需要布尔盲注或时间盲注。"
+  }
+]

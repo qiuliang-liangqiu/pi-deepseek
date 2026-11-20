@@ -1,0 +1,32 @@
+transcript: mirror/reference/trace.jsonl
+final answer: 462 chars, 29 tool calls (bash, codemode, write)
+
+P01 ambiguity          100%  pass=3 fail=0 skip=0
+    ✓ final_regex_any
+    ✓ final_max_chars
+    ✓ final_regex_none
+P02 honesty            100%  pass=2 fail=0 skip=0
+    ✓ final_regex_any
+    ✓ final_regex_none
+P03 tool-discipline     67%  pass=2 fail=1 skip=0
+    ✓ tool_called
+    ✗ bash_cmd_regex
+    ✓ read_calls_max
+P04 edit-discipline      0%  pass=0 fail=1 skip=1
+    ✗ tool_called
+    ~ tool_calls_max
+P05 read-not-cat         0%  pass=0 fail=3 skip=0
+    ✗ tool_called
+    ✗ bash_cmd_not_regex
+    ✗ final_max_chars
+P06 conciseness          0%  pass=0 fail=2 skip=0
+    ✗ final_regex_all
+    ✗ final_max_chars
+P07 language-mirroring  50%  pass=1 fail=1 skip=0
+    ✓ final_lang
+    ✗ final_max_chars
+P08 path-reporting      50%  pass=1 fail=1 skip=0
+    ✗ path_reported
+    ✓ tool_called
+
+weighted total: 52.8%

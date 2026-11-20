@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "ctf2": {
+      "url": "https://ctf2.example.com/api/ai/v1/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_CTF2_TOKEN>"
+      },
+      "description": "CTF2 风格平台：题目列表/环境/flag 提交"
+    },
+    "ctfy": {
+      "command": "uvx",
+      "args": ["ctfy", "mcp"],
+      "env": {
+        "CTFY_PLATFORM_URL": "https://ctfy.example.com",
+        "CTFY_TOKEN": "<YOUR_CTFY_TOKEN>"
+      },
+      "description": "CTFY 风格平台：镜像仓库、靶场"
+    }
+  }
+}

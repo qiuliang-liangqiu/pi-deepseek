@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "kind": "agent-mirror",
+  "id": "pi/01a1d140-5102-767d-bbd9-20a05c8031c2",
+  "createdAt": "2026-11-12T19:36:22.430Z",
+  "harness": {
+    "name": "pi",
+    "version": "1.5.2",
+    "installRoot": "~\\.pi\\agent\\install",
+    "env": {
+      "PI_CODING_AGENT": "true",
+      "PI_REASONING_LEVEL": "max"
+    }
+  },
+  "model": {
+    "provider": "deepseek",
+    "id": "deepseek-flash",
+    "thinkingLevel": "max",
+    "reasoningLevel": "max"
+  },
+  "runtime": {
+    "platform": "win32",
+    "node": "v24.19.0",
+    "shell": "bash (git-bash on win32)",
+    "cwd": "E:\\pi"
+  },
+  "prompt": {
+    "source": "session system message .sections",
+    "order": [
+      "preamble",
+      "tools",
+      "rules",
+      "docs",
+      "cwd",
+      "mcp_servers"
+    ],
+    "join": "\\n\\n",
+    "assembledSha256": "a26026e3bfe4642967d3756bcfe4a613291f372f240949dc5b11598ee7e6e08d",
+    "assembledBytes": 2753,
+    "sections": {
+      "preamble": {
+        "sha256": "52b86ec55caba7168f91b679de867d700924bf2641d661550566408fd6a59e48",
+        "bytes": 126
+      },
+      "tools": {
+        "sha256": "23e1a7e025184f86779799df8dd3d70f5331d1681d0b8c828b592edfddde8909",
+        "bytes": 324
+      },
+      "rules": {
+        "sha256": "fffab9e5f7ab77eb3c0bd10287713bdf798e0e5ad46cdc66b6e6c11aa267cb49",
+        "bytes": 726
+      },
+      "docs": {
+        "sha256": "4e222b5ebb16ceb039a3f4000dda664af6d2fe38e6aef35412a318877953a7b9",
+        "bytes": 1290
+      },
+      "cwd": {
+        "sha256": "66b52131c4b3b906054201b2d7a06094fabd9494f7df9f61d70a56fb50810cf1",
+        "bytes": 21
+      },
+      "mcp_servers": {
+        "sha256": "68d17951d4026295cb5c527ef1e6de9f7343c0c5eed6ff0639b13888640a5898",
+        "bytes": 255
+      }
+    },
+    "caveat": "pi stores the prompt as sections; the exact transport-level concatenation is harness-internal. This bundle uses '\\n\\n' in section order."
+  },
+  "tools": [
+    {
+      "name": "read",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file to read (relative or absolute)"
+          },
+          "offset": {
+            "type": "number",
+            "description": "Line number to start reading from (1-indexed)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of lines to read"
+          }
+        }
+      },
+      "constrainedSampling": {
+        "type": "json_schema",
+        "strict": "prefer"
+      },
+      "descriptionSha256": "28591224331003538dea9c6f990ee739a39f0ae53f3dcd881f189795a87e4a70"
+    },
+    {
+      "name": "bash",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Shell command to execute"
+          },
+          "timeout": {
+            "type": "number",
+            "description": "Timeout in seconds (optional, no default timeout)"
+          }
+        }
+      },
+      "constrainedSampling": {
+        "type": "json_schema",
+        "strict": "prefer"
+      },
+      "descriptionSha256": "81fffb8d9c372ffa6764448451a756f236aefe01cff888d8b0588694757f9635"
+    },
+    {
+      "name": "edit",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "path",
+          "edits"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file to edit (relative or absolute)"
+          },
+          "edits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "oldText",
+                "newText"
+              ],
+              "properties": {
+                "oldText": {
+                  "type": "string",
+                  "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                },
+                "newText": {
+                  "type": "string",
+                  "description": "Replacement text for this targeted edit."
+                }
+              }
+            },
+            "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+          }
+        }
+      },
+      "constrainedSampling": {
+        "type": "json_schema",
+        "strict": "prefer"
+      },
+      "descriptionSha256": "fe393ee165c4a190cb70f54b02bb3f6d5bfdd87e3261dcf48afed9cc6f32dd7a"
+    },
+    {
+      "name": "write",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "path",
+          "content"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file to write (relative or absolute)"
+          },
+          "content": {
+            "type": "string",
+            "description": "Content to write to the file"
+          }
+        }
+      },
+      "constrainedSampling": {
+        "type": "json_schema",
+        "strict": "prefer"
+      },
+      "descriptionSha256": "9803a8207578f349ee2f1c918a13e5143b56fce83e5a9a7de11348a3b4fd9b52"
+    },
+    {
+      "name": "subagent",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "Name of the agent to invoke (for single mode)"
+          },
+          "task": {
+            "type": "string",
+            "description": "Task to delegate (for single mode)"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "agent",
+                "task"
+              ],
+              "properties": {
+                "agent": {
+                  "type": "string",
+                  "description": "Name of the agent to invoke"
+                },
+                "task": {
+                  "type": "string",
+                  "description": "Task to delegate to the agent"
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "Working directory for the agent process"
+                }
+              }
+            },
+            "description": "Array of {agent, task} for parallel execution"
+          },
+          "chain": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "agent",
+                "task"
+              ],
+              "properties": {
+                "agent": {
+                  "type": "string",
+                  "description": "Name of the agent to invoke"
+                },
+                "task": {
+                  "type": "string",
+                  "description": "Task with optional {previous} placeholder for prior output"
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "Working directory for the agent process"
+                }
+              }
+            },
+            "description": "Array of {agent, task} for sequential execution"
+          },
+          "agentScope": {
+            "type": "string",
+            "enum": [
+              "user",
+              "project",
+              "both"
+            ],
+            "description": "Which agent directories to use. Default: \"user\". Use \"both\" to include project-local agents.",
+            "default": "user"
+          },
+          "confirmProjectAgents": {
+            "type": "boolean",
+            "description": "Prompt before running project-local agents. Default: true.",
+            "default": true
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Working directory for the agent process (single mode)"
+          }
+        }
+      },
+      "constrainedSampling": null,
+      "descriptionSha256": "62a2e07bc23a1e0601d54407eadeb59283f983d8c69aa1bcba720dc3e6266b00"
+    },
+    {
+      "name": "codemode",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Raw JavaScript source."
+          }
+        }
+      },
+      "constrainedSampling": {
+        "type": "grammar",
+        "variants": {
+          "openai_lark": "\nstart: options_source | plain_source\noptions_source: OPTIONS_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nOPTIONS_LINE: /[ \\t]*\\/\\/ @options:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n"
+        }
+      },
+      "descriptionSha256": "a9672af8be9f6014149cc699eb4fa99b21ac87b9b3cf9ae133e444d951a3c19a"
+    }
+  ],
+  "mcpServers": [
+    "mcp__ctf2"
+  ],
+  "reference": [
+    {
+      "path": "reference/trace.jsonl",
+      "sha256": "c214f57d1b722d767489bead0029e6602e2050ef56b9aa29a6a0dea3b0832854",
+      "messages": 61
+    }
+  ],
+  "limitations": [
+    "tool result rendering and truncation are pi-side behavior, not part of the prompt",
+    "subagent/persona wrappers add their own preamble, so agents/mirror.md is an approximation",
+    "MCP server mcp__ctf2 tools were reachable via codemode but are not bundled"
+  ]
+}

@@ -1,0 +1,28 @@
+# NOTICE
+
+本仓库自有代码与文档以 MIT 发布（见 `LICENSE`）。以下内容来自第三方，按原许可证使用。
+
+## pi（MIT）
+
+- 上游：https://github.com/earendil-works/pi （`pi` coding agent，npm `@earendil-works/pi-coding-agent`）
+- 版权：Copyright (c) 2025 Mario Zechner
+- 本仓库中的衍生物：
+  - `agent/agents/{planner,reviewer,scout,worker}.md`
+  - `agent/prompts/*.md`
+  - `agent/extensions/subagent/`（基于 pi 1.5.2 的 `examples/extensions/subagent` 改造）
+- pi 的 MIT 许可证文本与本仓库 `LICENSE` 相同。
+
+## ctf-skills（MIT）
+
+- 上游：https://github.com/ljagiello/ctf-skills
+- 版权：Copyright (c) 2026 Lukasz Jagiello
+- 本仓库中的衍生物：
+  - `agent/skills/ctf/`（2026-11 快照，frontmatter 与阅读约定有改动；原 `LICENSE` 保留在 `agent/skills/ctf/LICENSE`）
+  - `agent/skills/{awd,crypto,engagement,forensics,pwn,pwn-browser,pwn-heap,pwn-kernel,pwn-misc,pwn-vm,pwn-windows,rev,web}/`
+    是压缩过的单页调度卡，分类与参考文件名沿用上游。
+
+## 其他
+
+- `reports/`、`toolbox/docs/` 中的方法论与复盘模板由本仓库作者撰写。
+- 本仓库**不包含**任何具体比赛的战绩、题目编号、靶场地址或凭据；
+  示例里的 `flag{REDACTED}`、`demo-01`、`<your-platform-base-url>` 均为占位符。

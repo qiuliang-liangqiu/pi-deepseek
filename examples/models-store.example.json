@@ -1,0 +1,33 @@
+{
+  "deepseek": {
+    "models": [
+      {
+        "id": "deepseek-flash",
+        "name": "DeepSeek Flash",
+        "api": "openai-completions",
+        "baseUrl": "https://api.deepseek.com",
+        "provider": "deepseek",
+        "reasoning": true,
+        "thinkingLevelMap": {
+          "minimal": null,
+          "low": "low",
+          "medium": null,
+          "high": "high",
+          "max": "max"
+        },
+        "input": ["text", "image"],
+        "contextWindow": 1000000,
+        "maxTokens": 384000,
+        "compat": {
+          "supportsStore": false,
+          "supportsDeveloperRole": false,
+          "maxTokensField": "max_tokens",
+          "requiresReasoningContentOnAssistantMessages": true,
+          "thinkingFormat": "deepseek",
+          "supportsStrictMode": true
+        },
+        "type": "chat"
+      }
+    ]
+  }
+}

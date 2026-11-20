@@ -1,0 +1,3 @@
+# code	added_at	reason		(this file is an example; real SKIP.txt is git-ignored)
+demo-36	2026-01-01T00:00:00+08:00	two rounds of the jolokia MBeanFactory chain; reader context never parses web.xml -> no file read/RCE
+demo-23	2026-01-01T00:00:00+08:00	instance broken: nginx :80 upstream unreachable, all paths/Hosts/headers -> immediate 502; only port 80 open; several close+start cycles return the same dead upstream; retry only if the platform reprovisions. details work/demo-23/FINDINGS.md

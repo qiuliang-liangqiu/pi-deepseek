@@ -1,0 +1,30 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+Thumbs.db
+
+# 本地运行态（含 token / flag / 会话）
+auth.json
+mcp.json
+triage_state.json
+install/
+sessions/
+teams/
+backups/
+
+# 工具箱运行产物
+toolbox/work/*
+!toolbox/work/slots.py
+!toolbox/work/sub.py
+!toolbox/work/SUBMIT_PITFALL.md
+!toolbox/work/SKIP.example.txt
+!toolbox/work/README.md
+eval/route/out/
+eval/mirror/reports/local-*.txt
+
+# 杂项
+*.log
+*.tmp
+.venv/
+node_modules/
