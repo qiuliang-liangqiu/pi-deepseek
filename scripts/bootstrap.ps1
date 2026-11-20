@@ -22,7 +22,9 @@ param(
     [switch]$NoVerify,
     [switch]$Tools,
     [switch]$ToolsAll,
-    [switch]$Prereq
+    [switch]$Prereq,
+    [switch]$Update,
+    [switch]$Reinstall
 )
 $ErrorActionPreference = "Stop"
 
@@ -85,8 +87,19 @@ else {
 
 # ---------------------------------------------------------------- 2. backup
 Write-Step 2 "backup existing agent dir"
-$installed = @()
-if (Test-Path $Dest) {
+$existing = (Test-Path (Join-Path $Dest ".workbench.json")) -or `
+            (Test-Path (Join-Path $Dest "AGENTS.md")) -or `
+            (Test-Path (Join-Path $Dest "skills"))
+$mode = if ($Update) { "update" } elseif ($Reinstall) { "install" } elseif ($existing) { "update" } else { "install" }
+
+if ($existing -and $mode -eq "update") {
+    $m = Join-Path $Dest ".workbench.json"
+    if (Test-Path $m) {
+        try { $base = (Get-Content $m -Raw | ConvertFrom-Json).commit } catch { $base = "?" }
+        Ok "baseline commit: $base"
+    } else { Warn "no baseline manifest (older install): will back up before overwriting" }
+} elseif ($existing) {
+    $installed = @()
     foreach ($item in @("AGENTS.md", "agents", "bin", "extensions", "prompts", "skills", "knowledge")) {
         $p = Join-Path $Dest $item
         if (-not (Test-Path $p)) { continue }
@@ -95,24 +108,34 @@ if (Test-Path $Dest) {
         Ok "backed up $item"
         $installed += $item
     }
-}
-if ($installed.Count -eq 0) { Ok "nothing to back up" }
+} else { Ok "nothing to back up" }
 
-# ---------------------------------------------------------------- 3. install
-Write-Step 3 "install agent/ -> $Dest"
-Do-It { New-Item -ItemType Directory -Force -Path $Dest | Out-Null } "mkdir $Dest"
-foreach ($item in @("AGENTS.md", "agents", "bin", "extensions", "prompts", "knowledge", "skills")) {
-    $src = Join-Path $RepoRoot "agent\$item"
-    if (-not (Test-Path $src)) { continue }
-    Do-It { Copy-Item -Path $src -Destination (Join-Path $Dest $item) -Recurse -Force } "copy $item"
-    Ok $item
+# ---------------------------------------------------------------- 3. install / update
+if ($mode -eq "update" -and $existing) {
+    Write-Step 3 "update agent/ -> $Dest (incremental)"
+    $uargs = @("--agent-dir", $Dest, "--repo", $RepoRoot)
+    if ($DryRun) { $uargs += "--dry-run" }
+    if ($Yes) { $uargs += "--yes" }
+    & $Python (Join-Path $RepoRoot "scripts\update.py") @uargs
+    if ($LASTEXITCODE -ne 0) { Fail "incremental update failed; use -Reinstall for a full reinstall" }
+} else {
+    Write-Step 3 "install agent/ -> $Dest"
+    if ($existing) { Ok "full reinstall (previous copy kept in $Backup)" }
+    Do-It { New-Item -ItemType Directory -Force -Path $Dest | Out-Null } "mkdir $Dest"
+    foreach ($item in @("AGENTS.md", "agents", "bin", "extensions", "prompts", "knowledge", "skills")) {
+        $src = Join-Path (Join-Path $RepoRoot "agent") $item
+        if (-not (Test-Path $src)) { continue }
+        Do-It { Copy-Item -Path $src -Destination (Join-Path $Dest $item) -Recurse -Force } "copy $item"
+        Ok $item
+    }
 }
-if (-not $DryRun -and (Test-Path (Join-Path $RepoRoot "scripts\update.py"))) {
-    & $Python (Join-Path $RepoRoot "scripts\update.py") --agent-dir $Dest --record-only *> $null
+
+$upd = Join-Path (Join-Path $RepoRoot "scripts") "update.py"
+if (-not $DryRun -and (Test-Path $upd)) {
+    & $Python $upd --agent-dir $Dest --record-only *> $null
     if ($LASTEXITCODE -eq 0) { Ok "baseline manifest written" } else { Warn "could not write baseline manifest" }
 }
 
-# ---------------------------------------------------------------- 4. settings / auth
 Write-Step 4 "settings"
 $settings = Join-Path $Dest "settings.json"
 $example  = Join-Path $RepoRoot "examples\settings.example.json"

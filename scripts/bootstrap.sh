@@ -10,15 +10,17 @@
 #   bash scripts/bootstrap.sh --api --key-file ~/k.txt --provider deepseek --model deepseek-flash
 #   bash scripts/bootstrap.sh --tools      # 装完后：检查并（问过后）安装推荐工具
 #   bash scripts/bootstrap.sh --prereq      # 缺啥装啥（python/node/npm/pi/git）
+#   bash scripts/bootstrap.sh --update      # 已有安装：增量覆盖（不碰 auth/settings）
+#   bash scripts/bootstrap.sh --reinstall   # 已有安装：整体重装（仍会备份旧目录）
 #
-# Idempotent: re-running backs up the previous agent dir and reinstalls.
+# Idempotent: re-running detects an existing install and does an incremental update.
 # Never touches auth.json / settings.json / mcp.json (only creates examples' copies).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${PI_AGENT_DIR:-$HOME/.pi/agent}"
 DRY=0; SMOKE=1; YES=0; MINIMAL=0; API=0; KEY_FILE=""; PROVIDER="deepseek"; MODEL="deepseek-flash"; BASE_URL=""; VERIFY=1
-TOOLS=0; TOOLS_ALL=0; ALLOW_SUDO=0; PREREQ=0
+TOOLS=0; TOOLS_ALL=0; ALLOW_SUDO=0; PREREQ=0; MODE=auto
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
@@ -36,7 +38,9 @@ while [ $# -gt 0 ]; do
     --tools-all) TOOLS=1; TOOLS_ALL=1; shift ;;
     --allow-sudo) ALLOW_SUDO=1; shift ;;
     --prereq) PREREQ=1; shift ;;
-    -h|--help) sed -n '2,12p' "$0" | sed 's/^# *//'; exit 0 ;;
+    --update) MODE=update; shift ;;
+    --reinstall) MODE=install; shift ;;
+    -h|--help) sed -n '2,16p' "$0" | sed 's/^# *//'; exit 0 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
 done
@@ -92,10 +96,22 @@ fi
 command -v git >/dev/null 2>&1 && ok "git $(git --version | awk '{print $3}')" || warn "git not found (optional)"
 
 # ---------------------------------------------------------------- 2. backup
-c "1;36" "\n[2/6] backup existing agent dir"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$DEST/backups/$STAMP-install"
-if [ -d "$DEST" ] && [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
+
+# 是否已有安装（决定 install vs update）
+EXISTING=0
+if [ -f "$DEST/.workbench.json" ] || [ -f "$DEST/AGENTS.md" ] || [ -d "$DEST/skills" ]; then
+  EXISTING=1
+fi
+if [ "$MODE" = auto ]; then
+  [ "$EXISTING" = 1 ] && MODE=update || MODE=install
+fi
+
+c "1;36" "\n[2/6] backup existing agent dir"
+if [ "$EXISTING" = 1 ] && [ "$MODE" = update ]; then
+  ok "增量模式：不整体搬走，逐文件备份到 backups/<时间戳>-update/"
+elif [ -d "$DEST" ] && [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
   run mkdir -p "$BACKUP"
   for item in AGENTS.md agents bin extensions prompts skills knowledge; do
     [ -e "$DEST/$item" ] || continue
@@ -106,14 +122,45 @@ else
   ok "nothing to back up"
 fi
 
-# ---------------------------------------------------------------- 3. install
-c "1;36" "\n[3/6] install agent/ -> $DEST"
-run run mkdir -p "$DEST"
-for item in AGENTS.md agents bin extensions prompts knowledge skills; do
-  [ -e "$REPO_ROOT/agent/$item" ] || continue
-  run cp -a "$REPO_ROOT/agent/$item" "$DEST/$item"
-  ok "$item"
-done
+# ---------------------------------------------------------------- 3. install / update
+if [ "$EXISTING" = 1 ] && [ "$MODE" = update ]; then
+  c "1;36" "\n[3/6] 检测到已有安装 → 增量覆盖（保留 auth/settings 与本地改动）"
+  if [ -f "$DEST/.workbench.json" ]; then
+    BASE_COMMIT="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1],encoding="utf-8")).get("commit","?"))' "$DEST/.workbench.json" 2>/dev/null || echo "?")"
+    ok "基线 commit: $BASE_COMMIT"
+  else
+    warn "没有基线清单（旧版本装的）：会先备份再覆盖"
+  fi
+  if [ "$YES" = 0 ] && [ "$DRY" = 0 ] && [ ! -t 0 ]; then
+    warn "非交互运行：增量更新需要确认，已跳过（要自动更新请加 --yes）"
+    SKIPPED_UPDATE=1
+    UARGS=()
+  else
+    UARGS=(--agent-dir "$DEST" --repo "$REPO_ROOT")
+    [ "$DRY" = 1 ] && UARGS+=(--dry-run)
+    [ "$YES" = 1 ] && UARGS+=(--yes)
+  fi
+  if [ "${#UARGS[@]}" -eq 0 ]; then
+    :
+  elif ! "$PY" "$REPO_ROOT/scripts/update.py" "${UARGS[@]}"; then
+    warn "增量更新未完成；要整体重装：bash scripts/bootstrap.sh --reinstall"
+    exit 1
+  fi
+else
+  if [ "$EXISTING" = 1 ]; then
+    c "1;36" "\n[3/6] 整体重装 agent/ -> $DEST（旧目录已备份到 $BACKUP）"
+  elif [ "$MODE" = update ]; then
+    c "1;36" "\n[3/6] 没检测到已有安装 → 按全新安装处理"
+  else
+    c "1;36" "\n[3/6] 全新安装 agent/ -> $DEST"
+  fi
+  run mkdir -p "$DEST"
+  for item in AGENTS.md agents bin extensions prompts knowledge skills; do
+    [ -e "$REPO_ROOT/agent/$item" ] || continue
+    run cp -a "$REPO_ROOT/agent/$item" "$DEST/$item"
+    ok "$item"
+  done
+fi
 if [ "$DRY" = 0 ]; then
   chmod +x "$DEST"/bin/*.sh "$DEST"/bin/*.py 2>/dev/null || true
   # 记录基线，便于以后 `bash scripts/update.sh` 做增量覆盖（不碰 auth/settings）

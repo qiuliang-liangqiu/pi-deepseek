@@ -199,8 +199,14 @@ cd toolbox && python -m unittest discover -s framework/tests -v
 
 装过之后再拿新版本，不要重跑 `bootstrap.sh` 全量覆盖（会碰你的配置），用增量更新：
 
+**同一条 bootstrap 命令就会自动识别**：目录里已有安装 → 走增量更新；没有 → 全新安装。
+
 ```bash
-bash scripts/update.sh                # git pull + 计划 + 询问 + 应用
+bash scripts/bootstrap.sh              # 自动判断 install / update
+bash scripts/bootstrap.sh --update     # 强制走增量
+bash scripts/bootstrap.sh --reinstall  # 强制整体重装（旧目录先备份）
+
+bash scripts/update.sh                # 只更新配置层（会先 git pull）
 bash scripts/update.sh --dry-run      # 只看会改什么
 bash scripts/update.sh --keep-local   # 你改过的文件保留你的版本
 bash scripts/update.sh --no-pull      # 跳过 git pull（用当前 checkout）
