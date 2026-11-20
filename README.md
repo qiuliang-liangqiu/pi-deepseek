@@ -49,8 +49,8 @@ scripts/    bootstrap / 安装 / 脱敏检查
 不想整仓 clone 的最小操作：
 
 ```bash
-git clone --depth 1 https://github.com/qiuliang-liangqiu/pi-deepseek-.git
-cd pi-deepseek- && bash scripts/bootstrap.sh --minimal
+git clone --depth 1 https://github.com/qiuliang-liangqiu/pi-deepseek-v1.git
+cd pi-deepseek-v1 && bash scripts/bootstrap.sh --minimal
 ```
 
 > 仓库里**没有**：镜像、会话日志、`teams/`、`sessions/`、比赛附件、任何真实 flag 或 token，也没有具体比赛的战绩。
@@ -64,12 +64,18 @@ cd pi-deepseek- && bash scripts/bootstrap.sh --minimal
 ### 2. 一条命令装好
 
 ```bash
-git clone https://github.com/<you>/pi-agent.git
-cd pi-agent
+git clone https://github.com/qiuliang-liangqiu/pi-deepseek-v1.git
+cd pi-deepseek-v1
 
 bash scripts/bootstrap.sh            # Linux / macOS / Git-Bash
 # Windows:
 powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
+```
+
+克隆不下来就换协议（HTTPS 和 SSH 谁通不一定）：
+
+```bash
+git clone git@github.com:qiuliang-liangqiu/pi-deepseek-v1.git
 ```
 
 它会依次做六件事，全程幂等（重跑会先把旧配置备份到 `~/.pi/agent/backups/<时间戳>-install/`）：
