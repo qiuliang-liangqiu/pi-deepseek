@@ -142,7 +142,7 @@ function Smoke([string]$name, [scriptblock]$sb) {
 Smoke "scan_injection --help" { & $Python (Join-Path $Dest "bin\scan_injection.py") --help }
 Smoke "triage_gate status"    { & $Python (Join-Path $Dest "bin\triage_gate.py") status }
 if (-not $Minimal) { Smoke "framework cli --help"  { $env:PYTHONPATH = (Join-Path $RepoRoot "toolbox"); & $Python -m framework.cli --help } }
-$tk = Join-Path $RepoRoot "scripts	oolkit.py"
+$tk = Join-Path $RepoRoot "scripts\toolkit.py"
 if (Test-Path $tk) { Smoke "toolkit --check" { & $Python $tk --check } }
 Smoke "no-secrets check"      { & $Python (Join-Path $RepoRoot "scripts\check_no_secrets.py") --quiet }
 if ($Node -and (Test-Path (Join-Path $RepoRoot "eval\mirror\score.mjs"))) {
