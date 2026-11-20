@@ -17,9 +17,11 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 | 路径 | 作用 |
 |---|---|
 | `AGENTS.md` | 用户级总规则（止损闸门、速率、triage、团队、注入防护） |
+| `VERSION` | 版本契约（semver）；`update-check` 拿它和仓库里的同名文件比对 |
 | `agents/*.md` | 子代理定义；`recon/exploit/verifier` 自研，`planner/reviewer/scout/worker` 来自 pi 示例 |
 | `bin/*.py` `bin/triage.sh` | 团队调度、止损台账、triage 闸门、注入扫描、浅指纹 |
 | `extensions/*` | pi 自动加载（`~/.pi/agent/extensions/*/index.ts`） |
+| `extensions/update-check/` | 启动时异步检查仓库 `agent/VERSION`；`/wb-check`、`/wb-update` |
 | `prompts/*.md` | 斜杠模板（pi 示例） |
 | `knowledge/*.md` | 工作台说明 + 同步记录 |
 | `skills/*` | 技能包；来源见 `skills/PROVENANCE.md` |
@@ -37,6 +39,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 | `LOOP_GUARD` | `warn` | `warn` / `block` / `off` |
 | `READ_GUARD` | `warn` | `warn` / `block` / `off` |
 | `TEAM_JOB_TIMEOUT` | `1800` | `team_pool` 单 job 超时（秒） |
+| `PI_UPDATE_CHECK` | `on` | `off` 关闭 workbench 新版本自动提示 |
 | `TBENCH_TRIAGE` | `1` | `team_pool adopt` 时是否自动进入 triage |
 | `TBENCH_TRIAGE_PROBE_S` | `120` | triage 单箱探针秒数 |
 | `TBENCH_STALL_CLOSE_S` | `900` | 无新原语自动关箱阈值 |

@@ -100,7 +100,7 @@ if ($existing -and $mode -eq "update") {
     } else { Warn "no baseline manifest (older install): will back up before overwriting" }
 } elseif ($existing) {
     $installed = @()
-    foreach ($item in @("AGENTS.md", "agents", "bin", "extensions", "prompts", "skills", "knowledge")) {
+    foreach ($item in @("AGENTS.md", "VERSION", "agents", "bin", "extensions", "prompts", "skills", "knowledge")) {
         $p = Join-Path $Dest $item
         if (-not (Test-Path $p)) { continue }
         Do-It { New-Item -ItemType Directory -Force -Path $Backup | Out-Null } "mkdir $Backup"
@@ -122,7 +122,7 @@ if ($mode -eq "update" -and $existing) {
     Write-Step 3 "install agent/ -> $Dest"
     if ($existing) { Ok "full reinstall (previous copy kept in $Backup)" }
     Do-It { New-Item -ItemType Directory -Force -Path $Dest | Out-Null } "mkdir $Dest"
-    foreach ($item in @("AGENTS.md", "agents", "bin", "extensions", "prompts", "knowledge", "skills")) {
+    foreach ($item in @("AGENTS.md", "VERSION", "agents", "bin", "extensions", "prompts", "knowledge", "skills")) {
         $src = Join-Path (Join-Path $RepoRoot "agent") $item
         if (-not (Test-Path $src)) { continue }
         Do-It { Copy-Item -Path $src -Destination (Join-Path $Dest $item) -Recurse -Force } "copy $item"
@@ -159,10 +159,33 @@ if ($Minimal) {
     Ok "wrote $envFile"
 
     $profilePath = $PROFILE.CurrentUserAllHosts
+    if (-not $profilePath) {
+        # A fresh profile (or a test harness) may not have a Documents folder
+        # yet; $PROFILE is then empty and Test-Path/Get-Content throw. Fall
+        # back to the conventional path instead of dying at step 5.
+        $docs = [Environment]::GetFolderPath("MyDocuments")
+        if (-not $docs) {
+            $docs = Join-Path $HOME "Documents"
+            if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $docs | Out-Null }
+        }
+        $profilePath = Join-Path $docs "WindowsPowerShell\profile.ps1"
+    }
     $marker = "# >>> pi-agent workbench >>>"
+    # PS 5.1 only dot-sources .ps1 files: `. "workbench.env"` silently does nothing.
+    # Load the snippet through Invoke-Expression so any file extension works.
+    $loader = "if (Test-Path `"$envFile`") { Get-Content `"$envFile`" -Raw | Invoke-Expression }"
+    $legacy = ". `"$envFile`""
     $hasMarker = (Test-Path $profilePath) -and (Select-String -Path $profilePath -SimpleMatch $marker -Quiet)
     if ($hasMarker) {
-        Ok "$profilePath already sources workbench.env"
+        $profileText = Get-Content -Path $profilePath -Raw
+        if ($profileText.Contains($legacy)) {
+            Do-It { $profileText.Replace($legacy, $loader) | Set-Content -Path $profilePath -Encoding UTF8 } "repair profile loader"
+            if ($DryRun) { Write-Host "    [dry-run] would repair loader in $profilePath" } else { Ok "repaired loader in $profilePath" }
+        } elseif ($profileText.Contains($loader)) {
+            Ok "$profilePath already loads workbench.env"
+        } else {
+            Ok "$profilePath already has the workbench block"
+        }
     } else {
         $go = $Yes -or $DryRun
         if (-not $go) {
@@ -172,11 +195,11 @@ if ($Minimal) {
         if ($go) {
             Do-It {
                 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $profilePath) | Out-Null
-                Add-Content -Path $profilePath -Value @("", $marker, ". `"$envFile`"", "# <<< pi-agent workbench <<<")
+                Add-Content -Path $profilePath -Value @("", $marker, $loader, "# <<< pi-agent workbench <<<")
             } "update profile"
             if ($DryRun) { Write-Host "    [dry-run] would update $profilePath" } else { Ok "updated $profilePath" }
         } else {
-            Warn "skipped; add manually:  . `"$envFile`""
+            Warn "skipped; add manually:  $loader"
         }
     }
     $env:PI_WORKBENCH = Join-Path $RepoRoot "toolbox"
@@ -190,20 +213,24 @@ function Smoke([string]$name, [scriptblock]$sb) {
     try { & $sb *> $null; if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw "exit $LASTEXITCODE" }; Ok $name }
     catch { Warn "FAILED: $name"; $script:Failed = $true }
 }
-Smoke "scan_injection --help" { & $Python (Join-Path $Dest "bin\scan_injection.py") --help }
-Smoke "triage_gate status"    { & $Python (Join-Path $Dest "bin\triage_gate.py") status }
-if (-not $Minimal) { Smoke "framework cli --help"  { $env:PYTHONPATH = (Join-Path $RepoRoot "toolbox"); & $Python -m framework.cli --help } }
-$tk = Join-Path $RepoRoot "scripts\toolkit.py"
-if (Test-Path $tk) { Smoke "toolkit --check" { & $Python $tk --check } }
-Smoke "no-secrets check"      { & $Python (Join-Path $RepoRoot "scripts\check_no_secrets.py") --quiet }
-if ($Node -and (Test-Path (Join-Path $RepoRoot "eval\mirror\score.mjs"))) {
-    Smoke "eval/mirror verify" { & $Node (Join-Path $RepoRoot "eval\mirror\score.mjs") verify }
+if ($NoSmoke) {
+    Warn "-NoSmoke: skipped"
+} else {
+    Smoke "scan_injection --help" { & $Python (Join-Path $Dest "bin\scan_injection.py") --help }
+    Smoke "triage_gate status"    { & $Python (Join-Path $Dest "bin\triage_gate.py") status }
+    if (-not $Minimal) { Smoke "framework cli --help"  { $env:PYTHONPATH = (Join-Path $RepoRoot "toolbox"); & $Python -m framework.cli --help } }
+    $tk = Join-Path $RepoRoot "scripts\toolkit.py"
+    if (Test-Path $tk) { Smoke "toolkit --check" { & $Python $tk --check } }
+    Smoke "no-secrets check"      { & $Python (Join-Path $RepoRoot "scripts\check_no_secrets.py") --quiet }
+    if ($Node -and (Test-Path (Join-Path $RepoRoot "eval\mirror\score.mjs"))) {
+        Smoke "eval/mirror verify" { & $Node (Join-Path $RepoRoot "eval\mirror\score.mjs") verify }
+    }
 }
 
 # ---------------------------------------------------------------- 7. api (optional)
 if ($Api) {
     Write-Host "`n[7/7] API (-Api)" -ForegroundColor Cyan
-    $DEFAULT = Join-Path $HOME ".pigent"
+    $DEFAULT = Join-Path $HOME ".pi\agent"
     # compare full paths, not Resolve-Path: a missing dir would make null -eq null "true"
     try { $isDefault = ([IO.Path]::GetFullPath($Dest) -eq [IO.Path]::GetFullPath($DEFAULT)) }
     catch { $isDefault = ($Dest -eq $DEFAULT) }   # non-Windows path from Git-Bash/MSYS

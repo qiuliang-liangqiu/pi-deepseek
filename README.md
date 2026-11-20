@@ -122,7 +122,7 @@ git clone git@github.com:qiuliang-liangqiu/pi-deepseek-v1.git
 | 2 | 备份现有 `~/.pi/agent/{AGENTS.md,agents,bin,extensions,prompts,skills,knowledge}` |
 | 3 | 把 `agent/` 装进 `~/.pi/agent/`，并 `chmod +x bin/*` |
 | 4 | 没有 `settings.json` 才从示例复制；**绝不覆盖** `auth.json` / `settings.json` / `mcp.json` |
-| 5 | 写 `~/.pi/agent/workbench.env`（`PI_WORKBENCH=...`），询问是否加进 shell rc |
+| 5 | 写 `~/.pi/agent/workbench.env`（`PI_WORKBENCH=...`），询问是否加进 shell rc；PowerShell 走 profile 里的 `Get-Content ... \| Invoke-Expression`（PS 5.1 不能点源非 `.ps1` 文件） |
 | 6 | 冒烟：`scan_injection` / `triage_gate` / `framework.cli` / 脱敏检查 / `eval/mirror verify` |
 
 常用开关：`--dry-run`（只打印）、`--no-smoke`、`--yes`（不交互）、`--minimal`（只装 agent 层，不接线 toolbox）。
@@ -246,6 +246,26 @@ bash scripts/update.sh --no-pull      # 跳过 git pull（用当前 checkout）
 
 覆盖前会把要改的文件备份到 `~/.pi/agent/backups/<时间戳>-update/`；更新后自动跑一次冒烟，
 失败会打印回滚命令。`--prune` 才会删除上游已移除的文件（默认保留）。
+
+### 自动检测新版本（装过之后）
+
+版本契约只有一个文件：仓库里的 `agent/VERSION`（semver），安装/更新后落在
+`~/.pi/agent/VERSION`。扩展 `update-check` 在每次会话启动时异步比对远端
+（`raw.githubusercontent.com`，失败回退 jsDelivr），结果缓存 6 小时：
+
+- 有新版本：footer 显示 `wb ↑ <新版本>`，并提示 `/wb-update`（同一版本 24 小时只提示一次）
+- `/wb-check`：忽略缓存强制检查
+- `/wb-update`：先跑 `apply --dry-run` 打印文件计划，确认后才更新（备份 + 本地改动保留 `.local-<时间戳>`）
+- 无 UI / 脚本场景：`python ~/.pi/agent/bin/workbench_update.py check --json`
+  和 `... apply --dry-run` / `... apply --yes`
+
+关闭自动提示：`PI_UPDATE_CHECK=off`；指向别的仓库/镜像：`PI_UPDATE_REPO`、
+`PI_UPDATE_BRANCH`、`PI_UPDATE_URL`、`PI_UPDATE_TTL`（详见
+`agent/extensions/update-check/README.md`）。
+
+**发新版本**：改 `agent/VERSION`（例如 `1.0.0` → `1.0.1`）并 push 即可；
+想让人看得更清楚再加一个 `v1.0.1` tag。别的机器下次启动就会看到提示，
+但**不会自动升级**，要用户点确认。
 
 ## 工具自检与按需安装
 

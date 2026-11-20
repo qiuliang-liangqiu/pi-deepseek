@@ -9,7 +9,7 @@
     python scripts/update.py --prune          # 删除上游已移除的文件（默认保留并报告）
 
 Only these are touched (the "config layer"):
-    AGENTS.md  agents/  bin/  extensions/  prompts/  skills/
+    AGENTS.md  VERSION  agents/  bin/  extensions/  prompts/  skills/
 
 Never touched: auth.json, settings.json, mcp.json, models.json, toolkit.json,
 sessions/, teams/, backups/ — plus anything you added outside the list above.
@@ -38,7 +38,7 @@ import time
 from pathlib import Path
 
 MANIFEST = ".workbench.json"
-LAYOUT = ["AGENTS.md", "agents", "bin", "extensions", "prompts", "skills"]
+LAYOUT = ["AGENTS.md", "VERSION", "agents", "bin", "extensions", "prompts", "skills"]
 PROTECTED = {"auth.json", "settings.json", "mcp.json", "models.json", "models-store.json",
              "toolkit.json", "triage_state.json", "sessions", "teams", "backups", ".workbench.json"}
 
@@ -83,10 +83,20 @@ def load_manifest(agent: Path) -> dict:
         return {}
 
 
+def repo_version(repo: Path) -> str:
+    try:
+        first = (repo / "agent" / "VERSION").read_text(encoding="utf-8-sig").splitlines()[0].strip()
+        return first
+    except Exception:
+        return ""
+
+
 def write_manifest(agent: Path, repo: Path, files: dict[str, Path]) -> None:
     data = {
         "schema": "workbench/1",
         "commit": repo_commit(repo),
+        "version": repo_version(repo),
+        "repo": str(repo),
         "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "files": {rel: sha(p) for rel, p in sorted(files.items())},
     }
@@ -180,6 +190,9 @@ def main() -> int:
           f"冲突 {len(buckets['conflict'])} · 不变 {len(buckets['same'])}")
     for r in buckets["conflict"]:
         print(f"  ! 本地改过: {r['rel']}")
+    if buckets["unknown"]:
+        print(f"  ! 另有 {len(buckets['unknown'])} 个文件没有基线（旧安装或你手动同步过），"
+              f"升级会先备份再覆盖")
     if args.prune:
         stale = sorted(set(manifest.get("files") or {}) - set(sources))
         if stale:
