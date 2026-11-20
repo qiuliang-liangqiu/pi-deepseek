@@ -54,6 +54,7 @@ class Tool:
     kali: list[str] = field(default_factory=list)
     pip: str = ""
     go: str = ""
+    gem: str = ""
     probe: str = ""
     note: str = ""
 
@@ -95,6 +96,56 @@ CATALOG: list[Tool] = [
     Tool("apktool", "android", "资源还原", ubuntu=["apktool"], kali=["apktool"], probe="apktool"),
     Tool("frida", "android", "运行时 hook", pip="frida-tools", probe="frida"),
     Tool("7z", "qol", "解压缩", win="7zip.7zip", ubuntu=["p7zip-full"], kali=["p7zip-full"], probe="7z"),
+
+    # ---- second batch: referenced by skills/playbooks, packageable ----
+    Tool("curl", "base", "HTTP 请求（几乎所有 payload 都用它）", win="cURL.cURL", ubuntu=["curl"], kali=["curl"], probe="curl"),
+    Tool("wget", "base", "下载", ubuntu=["wget"], kali=["wget"], probe="wget"),
+    Tool("binutils", "base", "objdump/readelf/nm/strings", ubuntu=["binutils"], kali=["binutils"], probe="objdump"),
+    Tool("file", "base", "文件类型识别", ubuntu=["file"], kali=["file"], probe="file"),
+    Tool("xxd", "base", "十六进制查看", ubuntu=["xxd"], kali=["xxd"], probe="xxd"),
+    Tool("unzip", "base", "解 zip", ubuntu=["unzip"], kali=["unzip"], probe="unzip"),
+    Tool("gcc", "base", "本地复刻/编译 exp", ubuntu=["gcc"], kali=["gcc"], probe="gcc"),
+    Tool("make", "base", "编译", ubuntu=["make"], kali=["make"], probe="make"),
+    Tool("ruby", "base", "gem 工具的前置", ubuntu=["ruby", "ruby-dev"], kali=["ruby", "ruby-dev"], probe="ruby"),
+    Tool("dig", "recon", "DNS 查询", ubuntu=["dnsutils"], kali=["dnsutils"], probe="dig"),
+    Tool("nc", "recon", "netcat", ubuntu=["netcat-openbsd"], kali=["netcat-openbsd"], probe="nc"),
+    Tool("socat", "recon", "端口转发/中继", ubuntu=["socat"], kali=["socat"], probe="socat"),
+    Tool("masscan", "recon", "全端口快速扫描", ubuntu=["masscan"], kali=["masscan"], probe="masscan"),
+    Tool("whatweb", "recon", "指纹识别", ubuntu=["whatweb"], kali=["whatweb"], probe="whatweb"),
+    Tool("subfinder", "recon", "子域枚举", go="github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+         kali=["subfinder"], probe="subfinder"),
+    Tool("nikto", "web", "老式 web 扫描", ubuntu=["nikto"], kali=["nikto"], probe="nikto"),
+    Tool("wpscan", "web", "WordPress 扫描", kali=["wpscan"], gem="wpscan", probe="wpscan"),
+    Tool("wfuzz", "web", "fuzz（老牌）", pip="wfuzz", probe="wfuzz"),
+    Tool("dirsearch", "web", "目录爆破", pip="dirsearch", probe="dirsearch"),
+    Tool("arjun", "web", "参数发现", pip="arjun", probe="arjun"),
+    Tool("commix", "web", "命令注入", pip="commix", probe="commix"),
+    Tool("dalfox", "web", "XSS 扫描", go="github.com/hahwul/dalfox/v2@latest", probe="dalfox"),
+    Tool("ROPgadget", "pwn", "找 gadget", pip="ROPgadget", probe="ROPgadget"),
+    Tool("ropper", "pwn", "gadget 搜索/ROP 构建", pip="ropper", probe="ropper"),
+    Tool("one_gadget", "pwn", "libc one-gadget（ruby）", gem="one_gadget", probe="one_gadget"),
+    Tool("seccomp-tools", "pwn", "看 seccomp 规则（ruby）", gem="seccomp-tools", probe="seccomp-tools"),
+    Tool("gdb-multiarch", "pwn", "跨架构调试", ubuntu=["gdb-multiarch"], kali=["gdb-multiarch"], probe="gdb-multiarch"),
+    Tool("qemu-user", "pwn", "跑异构架构二进制", ubuntu=["qemu-user"], kali=["qemu-user"], probe="qemu-x86_64"),
+    Tool("strace", "pwn", "系统调用跟踪", ubuntu=["strace"], kali=["strace"], probe="strace"),
+    Tool("ltrace", "pwn", "库调用跟踪", ubuntu=["ltrace"], kali=["ltrace"], probe="ltrace"),
+    Tool("angr", "rev", "符号执行（重）", pip="angr", probe="angr"),
+    Tool("unicorn", "rev", "CPU 模拟（emu 题必备）", pip="unicorn", probe="unicorn"),
+    Tool("capstone", "rev", "反汇编引擎", pip="capstone", probe="capstone"),
+    Tool("keystone", "rev", "汇编引擎", pip="keystone-engine", probe="keystone"),
+    Tool("sage", "crypto", "数学/格（体积大，通常自带）", probe="sage", note="不在包管理器里，用官方安装器或镜像自带的"),
+    Tool("hashid", "crypto", "哈希类型识别", pip="hashid", probe="hashid"),
+    Tool("steghide", "forensics", "隐写（jpeg/wav）", ubuntu=["steghide"], kali=["steghide"], probe="steghide"),
+    Tool("zsteg", "forensics", "PNG/BMP 隐写（ruby）", gem="zsteg", probe="zsteg"),
+    Tool("pngcheck", "forensics", "PNG 结构校验", ubuntu=["pngcheck"], kali=["pngcheck"], probe="pngcheck"),
+    Tool("scalpel", "forensics", "文件雕刻", ubuntu=["scalpel"], kali=["scalpel"], probe="scalpel"),
+    Tool("testdisk", "forensics", "分区/文件恢复（含 photorec）", ubuntu=["testdisk"], kali=["testdisk"], probe="testdisk"),
+    Tool("bulk-extractor", "forensics", "批量特征提取", ubuntu=["bulk-extractor"], kali=["bulk-extractor"], probe="bulk_extractor"),
+    Tool("tcpdump", "forensics", "抓包", ubuntu=["tcpdump"], kali=["tcpdump"], probe="tcpdump"),
+    Tool("wireshark", "forensics", "GUI 抓包（含 tshark）", win="WiresharkFoundation.Wireshark",
+         ubuntu=["wireshark"], kali=["wireshark"], probe="wireshark"),
+    Tool("gau", "recon", "取历史 URL", go="github.com/lc/gau/v2/cmd/gau@latest", probe="gau"),
+    Tool("katana", "recon", "爬虫取端点", go="github.com/projectdiscovery/katana/cmd/katana@latest", probe="katana"),
 ]
 BY_ID = {t.id: t for t in CATALOG}
 
@@ -503,11 +554,15 @@ def make_plan(target: Target, ids: list[str] | None, groups: list[str] | None) -
             r["available"], r["fallback"] = True, ""
         elif r["pkgs"]:
             r["available"] = all(ok.get(p, False) for p in r["pkgs"])
-            r["fallback"] = "" if r["available"] else (f"pip:{r['tool'].pip}" if r["tool"].pip else
-                                                       ("go install" if r["tool"].go else ""))
+            t = r["tool"]
+            r["fallback"] = "" if r["available"] else (
+                f"pip:{t.pip}" if t.pip else (f"gem:{t.gem}" if t.gem else
+                                             ("go install" if t.go else "")))
         else:
             r["available"] = False
-            r["fallback"] = f"pip:{r['tool'].pip}" if r["tool"].pip else ("go install" if r["tool"].go else "")
+            t = r["tool"]
+            r["fallback"] = (f"pip:{t.pip}" if t.pip else (f"gem:{t.gem}" if t.gem else
+                            ("go install" if t.go else "")))
     return rows
 
 
@@ -589,6 +644,8 @@ def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> li
             continue
         if t.pip:
             cmd = pip_install_cmd(target, t.pip)
+        elif t.gem:
+            cmd = f"gem install --user-install {t.gem}"
         elif t.go:
             cmd = f"go install {t.go}"
         else:
@@ -664,6 +721,8 @@ def main() -> int:
                 fb.append(f"pip:`{t.pip}`")
             if t.go:
                 fb.append("go install")
+            if t.gem:
+                fb.append(f"gem:`{t.gem}`")
             print(f"| `{t.id}` | {t.group} | {win} | {ub} | {ka} | {', '.join(fb) or '—'} |")
         return 0
 
