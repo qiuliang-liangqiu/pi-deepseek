@@ -233,6 +233,13 @@ if ($Api) {
 }
 
 # ---------------------------------------------------------------- 8. tools (optional)
+if (-not $Tools -and -not $Yes -and -not $DryRun -and -not [Console]::IsInputRedirected) {
+    $st0 = Join-Path $RepoRoot "scripts\setup-tools.py"
+    if (Test-Path $st0) {
+        $a = Read-Host "  现在挑一个目标系统安装工具吗？（Windows / WSL / VM） [y/N]"
+        if ($a -match '^[yY]') { $Tools = $true }
+    }
+}
 if ($Tools) {
     Write-Host "`n[8/8] tools (-Tools)" -ForegroundColor Cyan
     $st = Join-Path $RepoRoot "scripts\setup-tools.py"

@@ -226,6 +226,12 @@ if [ "$API" = 1 ]; then
 fi
 
 # ---------------------------------------------------------------- 8. tools (optional)
+# 交互安装时主动问一句，免得用户以为"装完就全好了"
+if [ "$TOOLS" = 0 ] && [ "$YES" = 0 ] && [ "$DRY" = 0 ] && [ -t 0 ]    && [ -f "$REPO_ROOT/scripts/setup-tools.py" ]; then
+  printf "  现在挑一个目标系统安装工具吗？（Windows / WSL / VM） [y/N] "
+  read -r _ans || _ans=""
+  case "$_ans" in y|Y|yes|YES) TOOLS=1 ;; esac
+fi
 if [ "$TOOLS" = 1 ]; then
   c "1;36" "
 [8/8] tools（--tools）"
