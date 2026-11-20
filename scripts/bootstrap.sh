@@ -6,6 +6,8 @@
 #   bash scripts/bootstrap.sh --no-smoke   # skip smoke tests
 #   bash scripts/bootstrap.sh --yes        # non-interactive (no prompts)
 #   bash scripts/bootstrap.sh --minimal    # agent layer only: no PI_WORKBENCH, no toolbox smoke
+#   bash scripts/bootstrap.sh --api        # after install: configure the API key + verify (one step)
+#   bash scripts/bootstrap.sh --api --key-file ~/k.txt --provider deepseek --model deepseek-flash
 #
 # Idempotent: re-running backs up the previous agent dir and reinstalls.
 # Never touches auth.json / settings.json / mcp.json (only creates examples' copies).
@@ -13,15 +15,22 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${PI_AGENT_DIR:-$HOME/.pi/agent}"
-DRY=0; SMOKE=1; YES=0; MINIMAL=0
-for arg in "$@"; do
-  case "$arg" in
-    --dry-run) DRY=1 ;;
-    --no-smoke) SMOKE=0 ;;
-    --yes|-y) YES=1 ;;
-    --minimal|--no-toolbox) MINIMAL=1 ;;
-    -h|--help) sed -n '2,10p' "$0" | sed 's/^# *//'; exit 0 ;;
-    *) echo "unknown flag: $arg" >&2; exit 2 ;;
+DRY=0; SMOKE=1; YES=0; MINIMAL=0; API=0; KEY_FILE=""; PROVIDER="deepseek"; MODEL="deepseek-flash"; BASE_URL=""; VERIFY=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY=1; shift ;;
+    --no-smoke) SMOKE=0; shift ;;
+    --yes|-y) YES=1; shift ;;
+    --minimal|--no-toolbox) MINIMAL=1; shift ;;
+    --api) API=1; shift ;;
+    --key-file) KEY_FILE="${2:-}"; shift; shift ;;
+    --key-file=*) KEY_FILE="${1#*=}"; shift ;;
+    --provider) PROVIDER="${2:-}"; shift; shift ;;
+    --model) MODEL="${2:-}"; shift; shift ;;
+    --base-url) BASE_URL="${2:-}"; shift; shift ;;
+    --no-verify) VERIFY=0; shift ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# *//'; exit 0 ;;
+    *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
 done
 
@@ -167,6 +176,47 @@ if [ -f "$REPO_ROOT/scripts/check_no_secrets.py" ]; then
 fi
 if [ -n "$NODE_BIN" ] && [ -f "$REPO_ROOT/eval/mirror/score.mjs" ]; then
   smoke "eval/mirror verify" "$NODE_BIN" "$REPO_ROOT/eval/mirror/score.mjs" verify
+fi
+
+# ---------------------------------------------------------------- 7. api (optional)
+if [ "$API" = 1 ]; then
+  c "1;36" "\n[7/7] API（--api）"
+  # pi always reads ~/.pi/agent; skip live checks when we installed elsewhere (tests, containers)
+  DEFAULT_DIR="$(cd "$HOME/.pi/agent" 2>/dev/null && pwd || echo "$HOME/.pi/agent")"
+  DEST_REAL="$(cd "$DEST" 2>/dev/null && pwd || echo "$DEST")"
+  IS_DEFAULT=0; [ "$DEST_REAL" = "$DEFAULT_DIR" ] && IS_DEFAULT=1
+  if [ "$IS_DEFAULT" = 0 ]; then
+    warn "installed to $DEST (not pi's default) — writing credentials there, skipping live checks"
+  fi
+  if [ "$IS_DEFAULT" = 1 ] && command -v pi >/dev/null 2>&1 && pi auth check --provider "$PROVIDER" --json 2>/dev/null | grep -q '"status":"ready"'; then
+    ok "$PROVIDER already ready, nothing to do"
+  else
+    warn "no usable credentials for $PROVIDER — handing over to set-api.sh"
+    if [ "$DRY" = 1 ]; then
+      warn "[dry-run] would run: scripts/set-api.sh --provider $PROVIDER --model $MODEL --agent-dir $DEST"
+    else
+      ARGS=(--provider "$PROVIDER" --model "$MODEL" --agent-dir "$DEST" --quiet)
+      [ -n "$KEY_FILE" ] && ARGS+=(--key-file "$KEY_FILE")
+      [ -n "$BASE_URL" ] && ARGS+=(--base-url "$BASE_URL")
+      if [ -z "$KEY_FILE" ] && [ ! -t 0 ]; then
+        warn "no terminal and no --key-file: pass --key-file <path> to configure non-interactively"
+        FAIL=1
+      elif bash "$REPO_ROOT/scripts/set-api.sh" "${ARGS[@]}"; then
+        ok "credentials written"
+      else
+        warn "set-api.sh failed — run it manually"
+        FAIL=1
+      fi
+    fi
+  fi
+  if [ "$VERIFY" = 1 ] && [ "$DRY" = 0 ] && [ "$IS_DEFAULT" = 1 ]; then
+    if timeout 90 pi -p "reply with the single word: pong" 2>/dev/null | grep -qi pong; then
+      ok "end-to-end: model replied"
+    else
+      warn "model did not reply — check: pi auth check --provider $PROVIDER --json"
+      FAIL=1
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------- summary

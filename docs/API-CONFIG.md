@@ -2,7 +2,27 @@
 
 三条路线，从最省事到最可控。任选一条即可，**不要三条混着填**（优先级见文末）。
 
-## 0. 只给一个 key 的时候：用脚本（推荐用这种方式分发给别人）
+## 0. 一步到位：装配置 + 配 key + 验证
+
+```bash
+bash scripts/bootstrap.sh --api                      # 装完直接问 key（不回显）
+bash scripts/bootstrap.sh --api --key-file ~/k.txt   # 非交互
+bash scripts/bootstrap.sh --api --provider myproxy \
+     --base-url https://gw.example.com/v1 --key-file ~/k.txt --model my-model
+```
+
+Windows 对应：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -Api
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -Api -KeyFile C:\path\k.txt -Provider deepseek -Model deepseek-flash
+```
+
+它做完六步安装后会：检测 `pi auth check`，没配好就转给 `set-api.sh` 写 key，
+最后跑一次 `pi -p "reply with the single word: pong"` 做端到端验证。
+`--no-verify` 可跳过这次模型调用。
+
+## 0b. 只给一个 key 的时候：单独用 set-api.sh
 
 如果你手上只有一串 key，要把它变成"能跑的 pi"，不要直接把 key 贴在聊天/工单里，走这个：
 

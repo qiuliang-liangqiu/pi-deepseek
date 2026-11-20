@@ -13,7 +13,13 @@ param(
     [switch]$DryRun,
     [switch]$NoSmoke,
     [switch]$Yes,
-    [switch]$Minimal
+    [switch]$Minimal,
+    [switch]$Api,
+    [string]$KeyFile = "",
+    [string]$Provider = "deepseek",
+    [string]$Model = "deepseek-flash",
+    [string]$BaseUrl = "",
+    [switch]$NoVerify
 )
 $ErrorActionPreference = "Stop"
 
@@ -147,6 +153,81 @@ if (Test-Path $tk) { Smoke "toolkit --check" { & $Python $tk --check } }
 Smoke "no-secrets check"      { & $Python (Join-Path $RepoRoot "scripts\check_no_secrets.py") --quiet }
 if ($Node -and (Test-Path (Join-Path $RepoRoot "eval\mirror\score.mjs"))) {
     Smoke "eval/mirror verify" { & $Node (Join-Path $RepoRoot "eval\mirror\score.mjs") verify }
+}
+
+# ---------------------------------------------------------------- 7. api (optional)
+if ($Api) {
+    Write-Host "`n[7/7] API (-Api)" -ForegroundColor Cyan
+    $DEFAULT = Join-Path $HOME ".pigent"
+    # compare full paths, not Resolve-Path: a missing dir would make null -eq null "true"
+    try { $isDefault = ([IO.Path]::GetFullPath($Dest) -eq [IO.Path]::GetFullPath($DEFAULT)) }
+    catch { $isDefault = ($Dest -eq $DEFAULT) }   # non-Windows path from Git-Bash/MSYS
+    $ready = $false
+    if ($isDefault -and (Get-Command pi -ErrorAction SilentlyContinue)) {
+        try {
+            $out = & pi auth check --provider $Provider --json 2>$null
+            $ready = ($out -join "") -match '"status":"ready"'
+        } catch { }
+    }
+    if ($ready) {
+        Ok "$Provider already ready"
+    } elseif ($DryRun) {
+        Warn "[dry-run] would configure $Provider (key from -KeyFile or hidden prompt)"
+        Warn "[dry-run] would write auth.json / settings.json"
+    } else {
+        $key = ""
+        if ($KeyFile) {
+            if (-not (Test-Path $KeyFile)) { Warn "key file not found: $KeyFile" }
+            else { $key = (Get-Content $KeyFile -Raw).Trim() }
+        } else {
+            $sec = Read-Host "paste $Provider api key (hidden)" -AsSecureString
+            if ($sec) {
+                $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+                try { $key = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr) }
+                finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            }
+        }
+        if (-not $key) {
+            Warn "no key provided - run: pi auth login $Provider --api-key"
+        } else {
+            New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+            $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+            foreach ($f in @("auth.json", "settings.json", "models.json")) {
+                $fp = Join-Path $Dest $f
+                if (Test-Path $fp) { Copy-Item $fp "$fp.bak-$stamp"; Ok "backup $f" }
+            }
+            $authPath = Join-Path $Dest "auth.json"
+            $auth = if (Test-Path $authPath) { Get-Content $authPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+            $auth | Add-Member -NotePropertyName $Provider -NotePropertyValue ([pscustomobject]@{ type = "api_key"; key = $key }) -Force
+            $auth | ConvertTo-Json -Depth 8 | Set-Content $authPath -Encoding UTF8
+            Ok "wrote auth.json"
+
+            $stPath = Join-Path $Dest "settings.json"
+            $st = if (Test-Path $stPath) { Get-Content $stPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+            $st | Add-Member -NotePropertyName defaultProvider -NotePropertyValue $Provider -Force
+            $st | Add-Member -NotePropertyName defaultModel -NotePropertyValue $Model -Force
+            $st | Add-Member -NotePropertyName defaultThinkingLevel -NotePropertyValue "max" -Force
+            $st | ConvertTo-Json -Depth 8 | Set-Content $stPath -Encoding UTF8
+            Ok "wrote settings.json"
+
+            if ($BaseUrl) {
+                $mp = Join-Path $Dest "models.json"
+                $mc = if (Test-Path $mp) { Get-Content $mp -Raw | ConvertFrom-Json } else { [pscustomobject]@{ } }
+                if (-not $mc.PSObject.Properties["providers"]) { $mc | Add-Member -NotePropertyName providers -NotePropertyValue ([pscustomobject]@{}) }
+                $entry = [pscustomobject]@{ baseUrl = $BaseUrl; api = "openai-completions" }
+                $mc.providers | Add-Member -NotePropertyName $Provider -NotePropertyValue $entry -Force
+                $mc | ConvertTo-Json -Depth 8 | Set-Content $mp -Encoding UTF8
+                Ok "wrote models.json"
+            }
+        }
+    }
+    if (-not $NoVerify -and -not $DryRun -and $isDefault -and (Get-Command pi -ErrorAction SilentlyContinue)) {
+        try {
+            $reply = & pi -p "reply with the single word: pong" 2>$null
+            if (($reply -join "") -match "pong") { Ok "end-to-end: model replied" }
+            else { Warn "model did not reply - check: pi auth check --provider $Provider --json"; $script:Failed = $true }
+        } catch { Warn "verify failed: $_"; $script:Failed = $true }
+    }
 }
 
 # ---------------------------------------------------------------- summary

@@ -67,10 +67,14 @@ cd pi-deepseek-v1 && bash scripts/bootstrap.sh --minimal
 git clone https://github.com/qiuliang-liangqiu/pi-deepseek-v1.git
 cd pi-deepseek-v1
 
-bash scripts/bootstrap.sh            # Linux / macOS / Git-Bash
+bash scripts/bootstrap.sh --api      # 一条命令：装配置 + 配 API key + 端到端验证
 # Windows:
-powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -Api   # -Api 会把 key 也配好
 ```
+
+`--api` 装完会问你要 key（输入不回显），写 `auth.json` + 默认模型，并跑一次
+`pi -p "reply pong"` 确认真能出 token。非交互用 `--api --key-file ~/k.txt`。
+不想这次就配 API 就省略 `--api`，先用 `bash scripts/bootstrap.sh` 装配置。
 
 克隆不下来就换协议（HTTPS 和 SSH 谁通不一定）：
 
