@@ -5,6 +5,19 @@
 > 装之前脚本会用 `apt-cache policy` / `winget show` 复核可用性，不可用的会标 `不可用`。
 > 同一张表也用于 WSL 发行版和 **VMware 虚拟机（走 SSH）**：目标系统不同，走的包管理器就不同。
 
+## Kali 的特别处理
+
+Kali 自带绝大多数工具，逐条装反而慢。在 Kali 目标上加 `--kali-meta` 会先装
+`kali-linux-headless`（约 1.5 GB，一次到位），再按本表补齐差异：
+
+```bash
+python scripts/setup-tools.py --target kali --kali-meta --yes
+```
+
+Kali 与 Ubuntu 的差异（本表已有 `kali` 列）：`httpx` → `httpx-toolkit`、
+`impacket` → `impacket-scripts`、另加 `metasploit-framework`、`netexec`、`responder`、
+`bettercap`。反向：Ubuntu 没有 `metasploit`/`netexec`，会标 `不可用`。
+
 | 工具 | 组 | Windows (winget) | Ubuntu/Debian (apt) | Kali (apt) | 兜底 |
 |---|---|---|---|---|---|
 | `go` | base | `GoLang.Go` | `golang-go` | `golang` | — |
@@ -87,6 +100,13 @@
 | `wireshark` | forensics | `WiresharkFoundation.Wireshark` | `wireshark` | `wireshark` | — |
 | `gau` | recon | — | — | — | go install |
 | `katana` | recon | — | — | — | go install |
+| `hydra` | web | — | `hydra` | `hydra` | — |
+| `aircrack-ng` | recon | — | `aircrack-ng` | `aircrack-ng` | — |
+| `metasploit` | ad | — | — | `metasploit-framework` | — |
+| `impacket` | ad | — | `python3-impacket` | `impacket-scripts` | pip:`impacket` |
+| `netexec` | ad | — | — | `netexec` | — |
+| `responder` | ad | — | — | `responder` | — |
+| `bettercap` | ad | — | — | `bettercap` | — |
 
 ## 这些不在包管理器里（需要手动装）
 

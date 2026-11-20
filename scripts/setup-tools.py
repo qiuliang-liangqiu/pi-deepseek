@@ -146,6 +146,15 @@ CATALOG: list[Tool] = [
          ubuntu=["wireshark"], kali=["wireshark"], probe="wireshark"),
     Tool("gau", "recon", "取历史 URL", go="github.com/lc/gau/v2/cmd/gau@latest", probe="gau"),
     Tool("katana", "recon", "爬虫取端点", go="github.com/projectdiscovery/katana/cmd/katana@latest", probe="katana"),
+    # ---- 内网 / 红队（Kali 自带，Ubuntu 需要 universe） ----
+    Tool("hydra", "web", "在线爆破（有结构性证据才用）", ubuntu=["hydra"], kali=["hydra"], probe="hydra"),
+    Tool("aircrack-ng", "recon", "无线", ubuntu=["aircrack-ng"], kali=["aircrack-ng"], probe="aircrack-ng"),
+    Tool("metasploit", "ad", "漏洞利用框架", kali=["metasploit-framework"], probe="msfconsole"),
+    Tool("impacket", "ad", "AD/SMB 脚本集", ubuntu=["python3-impacket"], kali=["impacket-scripts"],
+         pip="impacket", probe="impacket-secretsdump"),
+    Tool("netexec", "ad", "SMB/WinRM/LDAP 一把梭（nxc）", kali=["netexec"], probe="nxc"),
+    Tool("responder", "ad", "LLMNR/NBT-NS 投毒", kali=["responder"], probe="responder"),
+    Tool("bettercap", "ad", "中间人/ARP", kali=["bettercap"], probe="bettercap"),
 ]
 BY_ID = {t.id: t for t in CATALOG}
 
@@ -178,7 +187,7 @@ def pip_install_cmd(target: Target, pkg: str) -> str:
 
 def pip_probe_cmd(mod: str) -> str:
     return f'python3 -c "import {mod}" >/dev/null 2>&1' 
-GROUPS = ["base", "recon", "web", "pwn", "forensics", "crypto", "android", "qol"]
+GROUPS = ["base", "recon", "web", "pwn", "forensics", "crypto", "android", "ad", "qol"]
 
 
 # --------------------------------------------------------------------- targets
@@ -704,6 +713,8 @@ def main() -> int:
     ap.add_argument("--ssh-user", default="")
     ap.add_argument("--ssh-port", type=int, default=22)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--kali-meta", action="store_true",
+                    help="Kali: 先装 kali-linux-headless（约 1.5GB，一次到位），再补齐差异")
     ap.add_argument("--ssh-password-file", default="", help="从文件读 SSH 密码（不落 shell 历史）")
     ap.add_argument("--start-vm", action="store_true", help="VM 没开机时用 vmrun start 启动并等 IP")
     ap.add_argument("--install-wsl", action="store_true", help="未装 WSL 时执行 wsl --install -d Ubuntu（需要 UAC）")
@@ -823,6 +834,23 @@ def main() -> int:
         print(f"SSH 连不上 {hint}。检查：虚拟机已开机、sshd 在跑、防火墙放行，或先配好免密：")
         print(f"  ssh-copy-id {hint}")
         return 2
+
+    if args.kali_meta and (target.os_name or "").lower() == "kali":
+        cmd = "LC_ALL=C apt-get install -y kali-linux-headless"
+        print(chr(10) + "先装 Kali 合集：" + cmd + "（约 1.5 GB）")
+        if args.dry_run:
+            print("    [dry-run] skipped")
+        else:
+            if target.kind == "ssh":
+                pw = _SSH_PW.get(target.alias or target.host or "", "")
+                rc, _ = exec_in(target, ("sudo -S -p '' " + cmd) if pw else cmd,
+                                timeout=3600, stdin_text=(pw + chr(10)) if pw else None,
+                                tty=not pw)
+            elif target.kind == "apt":
+                rc, _ = run(["bash", "-lc", ("sudo " if args.allow_sudo else "") + cmd], timeout=3600)
+            else:
+                rc, _ = exec_in(target, cmd, timeout=3600)
+            print("    ok" if rc == 0 else f"    ! exit {rc}（继续按清单补）")
 
     rows = make_plan(target, ids, groups)
     show_plan(rows, target)

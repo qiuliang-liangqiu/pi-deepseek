@@ -91,6 +91,22 @@ python3 scripts/setup-tools.py --target ubuntu --yes --allow-sudo
 python scripts/setup-tools.py --target ubuntu --ssh-host <ip> --ssh-user <user>
 ```
 
+### B2. Kali（工具最全，省事）
+
+Kali 自带绝大多数工具，加 `--kali-meta` 一次装完（约 1.5 GB）：
+
+```bash
+# WSL（官方发行版）
+wsl --install -d kali-linux
+wsl -d kali-linux -- bash -lc "cd /mnt/c/... && python3 scripts/setup-tools.py --target kali --kali-meta --yes"
+
+# 或官方 Kali VM（预装工具，导入后走 SSH）
+python scripts/setup-tools.py --target kali --ssh-host <kali-ip> --ssh-user kali --kali-meta
+```
+
+Kali 与 Ubuntu 的包名差异（`httpx-toolkit`、`impacket-scripts`、`metasploit-framework`、
+`netexec`）已在 `docs/TOOLS.md` 的 Kali 列标出。
+
 ### C. Docker（只想要工具，不想动系统）
 
 ```bash
