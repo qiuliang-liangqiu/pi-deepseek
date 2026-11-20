@@ -5,6 +5,7 @@
 #   bash scripts/bootstrap.sh --dry-run    # show what would happen
 #   bash scripts/bootstrap.sh --no-smoke   # skip smoke tests
 #   bash scripts/bootstrap.sh --yes        # non-interactive (no prompts)
+#   bash scripts/bootstrap.sh --minimal    # agent layer only: no PI_WORKBENCH, no toolbox smoke
 #
 # Idempotent: re-running backs up the previous agent dir and reinstalls.
 # Never touches auth.json / settings.json / mcp.json (only creates examples' copies).
@@ -12,13 +13,14 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${PI_AGENT_DIR:-$HOME/.pi/agent}"
-DRY=0; SMOKE=1; YES=0
+DRY=0; SMOKE=1; YES=0; MINIMAL=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY=1 ;;
     --no-smoke) SMOKE=0 ;;
     --yes|-y) YES=1 ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    --minimal|--no-toolbox) MINIMAL=1 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "unknown flag: $arg" >&2; exit 2 ;;
   esac
 done
@@ -106,31 +108,35 @@ fi
 
 # ---------------------------------------------------------------- 5. PI_WORKBENCH
 c "1;36" "\n[5/6] PI_WORKBENCH"
-if [ "$DRY" = 0 ]; then
-  mkdir -p "$DEST"
-  printf 'export PI_WORKBENCH="%s"\n' "$REPO_ROOT/toolbox" > "$DEST/workbench.env"
-fi
-ok "wrote $DEST/workbench.env"
-RC=""
-case "$(basename "${SHELL:-bash}")" in
-  zsh) RC="$HOME/.zshrc" ;;
-  *)   RC="$HOME/.bashrc" ;;
-esac
-MARK="# >>> pi-agent workbench >>>"
-if [ -f "$RC" ] && grep -qF "$MARK" "$RC" 2>/dev/null; then
-  ok "$RC already sources workbench.env"
+if [ "$MINIMAL" = 1 ]; then
+  warn "--minimal: skipped (the agent layer does not need toolbox)"
 else
-  if [ "$YES" = 1 ] || { [ "$DRY" = 0 ] && [ -t 0 ] && \
-       { printf "    append to %s? [Y/n] " "$RC"; read -r a; case "$a" in n|N) false;; *) true;; esac; }; }; then
-    if [ "$DRY" = 0 ]; then
-      { echo ""; echo "$MARK"; echo "[ -f \"$DEST/workbench.env\" ] && . \"$DEST/workbench.env\""; echo "# <<< pi-agent workbench <<<"; } >> "$RC"
-    fi
-    ok "updated $RC"
-  else
-    warn "skipped; add manually:  source $DEST/workbench.env"
+  if [ "$DRY" = 0 ]; then
+    mkdir -p "$DEST"
+    printf 'export PI_WORKBENCH="%s"\n' "$REPO_ROOT/toolbox" > "$DEST/workbench.env"
   fi
+  ok "wrote $DEST/workbench.env"
+  RC=""
+  case "$(basename "${SHELL:-bash}")" in
+    zsh) RC="$HOME/.zshrc" ;;
+    *)   RC="$HOME/.bashrc" ;;
+  esac
+  MARK="# >>> pi-agent workbench >>>"
+  if [ -f "$RC" ] && grep -qF "$MARK" "$RC" 2>/dev/null; then
+    ok "$RC already sources workbench.env"
+  else
+    if [ "$YES" = 1 ] || { [ "$DRY" = 0 ] && [ -t 0 ] && \
+         { printf "    append to %s? [Y/n] " "$RC"; read -r a; case "$a" in n|N) false;; *) true;; esac; }; }; then
+      if [ "$DRY" = 0 ]; then
+        { echo ""; echo "$MARK"; echo "[ -f \"$DEST/workbench.env\" ] && . \"$DEST/workbench.env\""; echo "# <<< pi-agent workbench <<<"; } >> "$RC"
+      fi
+      ok "updated $RC"
+    else
+      warn "skipped; add manually:  source $DEST/workbench.env"
+    fi
+  fi
+  export PI_WORKBENCH="$REPO_ROOT/toolbox"
 fi
-export PI_WORKBENCH="$REPO_ROOT/toolbox"
 
 # ---------------------------------------------------------------- 6. smoke
 c "1;36" "\n[6/6] smoke tests"
@@ -150,8 +156,12 @@ smoke_codes() { # name, allowed-codes, command...
 smoke "scan_injection --help" "$PY" "$DEST/bin/scan_injection.py" --help
 smoke_codes "stall_gate show" "0 1 2" "$PY" "$DEST/bin/stall_gate.py" show /tmp/pi-bootstrap-nonexistent
 smoke "triage_gate status"    "$PY" "$DEST/bin/triage_gate.py" status
-smoke "framework cli --help"  env PYTHONPATH="$REPO_ROOT/toolbox" "$PY" -m framework.cli --help
-smoke "no-secrets check"      "$PY" "$REPO_ROOT/scripts/check_no_secrets.py" --quiet
+if [ "$MINIMAL" = 0 ]; then
+  smoke "framework cli --help"  env PYTHONPATH="$REPO_ROOT/toolbox" "$PY" -m framework.cli --help
+fi
+if [ -f "$REPO_ROOT/scripts/check_no_secrets.py" ]; then
+  smoke "no-secrets check" "$PY" "$REPO_ROOT/scripts/check_no_secrets.py" --quiet
+fi
 if [ -n "$NODE_BIN" ] && [ -f "$REPO_ROOT/eval/mirror/score.mjs" ]; then
   smoke "eval/mirror verify" "$NODE_BIN" "$REPO_ROOT/eval/mirror/score.mjs" verify
 fi
@@ -167,7 +177,7 @@ cat <<EOF
 
   agent dir : $DEST
   backup    : $BACKUP  (if anything was replaced)
-  workbench : export PI_WORKBENCH="$REPO_ROOT/toolbox"
+  workbench : $( [ "$MINIMAL" = 1 ] && echo "skipped (--minimal)" || echo "export PI_WORKBENCH=\"$REPO_ROOT/toolbox\"" )
 
   next:
     1) edit $DEST/settings.json (provider/model)

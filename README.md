@@ -23,6 +23,36 @@ scripts/    bootstrap / 安装 / 脱敏检查
 | **复盘层** `reports/` | 复盘的结构与脱敏规则（示例，不含真实战绩） | 模板 + 规则 |
 | **评测层** `eval/` | 改完 skill 后怎么回归：行为镜像 8 探针/19 检查、14 条路由用例 | `score.mjs` + `route_eval.py` |
 
+## 我要下哪些
+
+**整仓只有 5.4 MB / 326 个文件**，全下最省事。但按目的可以只取一部分：
+
+| 目的 | 需要 | 怎么装 |
+|---|---|---|
+| 让 pi 有纪律 / 防护 / 多 Agent（不跑分） | `agent/`（257 文件，4.5 MB） | `bash scripts/bootstrap.sh --minimal` |
+| **跑分 / CTF 全流程（推荐）** | 全部（5.4 MB） | `bash scripts/bootstrap.sh` |
+| 只想读方法论，不装 | `README.md`、`toolbox/docs/{SOP,PLAYBOOK,PITFALLS}.md`、`reports/` | 直接看，不用 clone |
+| 要改代码 / 提 PR | 全部 + `eval/` | 见根 `AGENTS.md` |
+
+三个目录的分工：
+
+- **`agent/`** — 装进 `~/.pi/agent/`，是**唯一必须**的部分。里面是 AGENTS.md、6 个扩展、
+  5 个 bin 脚本、21 个 skill、7 个子代理。**它不 import toolbox，可以完全独立运行**。
+- **`toolbox/`** — 跑分 CLI（`framework.cli`）+ 三份文档。用 `PI_WORKBENCH` 指过去即可，
+  不需要拷进 `~/.pi/agent`。`--minimal` 装法下 `$PI_WORKBENCH` 未设置，skill 里提到
+  toolbox 的命令会失效，但规则/防护/多 Agent 全都能用。
+- **`scripts/`** — bootstrap / install / doctor / 脱敏检查。只跑 install 的话
+  记得它还要求 `agent/AGENTS.md` 存在（现在有了）。
+
+不想整仓 clone 的最小操作：
+
+```bash
+git clone --depth 1 https://github.com/qiuliang-liangqiu/pi-deepseek-.git
+cd pi-deepseek- && bash scripts/bootstrap.sh --minimal
+```
+
+> 仓库里**没有**：镜像、会话日志、`teams/`、`sessions/`、比赛附件、任何真实 flag 或 token，也没有具体比赛的战绩。
+
 ## 快速开始
 
 ### 1. 安装 pi
@@ -51,7 +81,7 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 | 5 | 写 `~/.pi/agent/workbench.env`（`PI_WORKBENCH=...`），询问是否加进 shell rc |
 | 6 | 冒烟：`scan_injection` / `triage_gate` / `framework.cli` / 脱敏检查 / `eval/mirror verify` |
 
-常用开关：`--dry-run`（只打印）、`--no-smoke`、`--yes`（不交互）。
+常用开关：`--dry-run`（只打印）、`--no-smoke`、`--yes`（不交互）、`--minimal`（只装 agent 层，不接线 toolbox）。
 装完体检：
 
 ```bash

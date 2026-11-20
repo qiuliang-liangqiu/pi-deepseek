@@ -4,6 +4,7 @@
 #   ... -DryRun          show what would happen
 #   ... -NoSmoke         skip smoke tests
 #   ... -Yes             non-interactive
+#   ... -Minimal         agent layer only: no PI_WORKBENCH, no toolbox smoke
 #
 # Idempotent. Never touches auth.json / settings.json / mcp.json
 # (settings.json is only created from examples/ when missing).
@@ -11,7 +12,8 @@
 param(
     [switch]$DryRun,
     [switch]$NoSmoke,
-    [switch]$Yes
+    [switch]$Yes,
+    [switch]$Minimal
 )
 $ErrorActionPreference = "Stop"
 
@@ -98,32 +100,36 @@ if (Test-Path (Join-Path $Dest "mcp.json")) { Ok "mcp.json exists (left untouche
 
 # ---------------------------------------------------------------- 5. PI_WORKBENCH
 Write-Step 5 "PI_WORKBENCH"
-$envFile = Join-Path $Dest "workbench.env"
-Do-It { "`$env:PI_WORKBENCH = `"$RepoRoot\toolbox`"" | Set-Content -Path $envFile -Encoding UTF8 } "write workbench.env"
-Ok "wrote $envFile"
-
-$profilePath = $PROFILE.CurrentUserAllHosts
-$marker = "# >>> pi-agent workbench >>>"
-$hasMarker = (Test-Path $profilePath) -and (Select-String -Path $profilePath -SimpleMatch $marker -Quiet)
-if ($hasMarker) {
-    Ok "$profilePath already sources workbench.env"
+if ($Minimal) {
+    Warn "-Minimal: skipped (the agent layer does not need toolbox)"
 } else {
-    $go = $Yes -or $DryRun
-    if (-not $go) {
-        $answer = Read-Host "    append to $profilePath ? [Y/n]"
-        $go = -not ($answer -match '^[nN]')
-    }
-    if ($go) {
-        Do-It {
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $profilePath) | Out-Null
-            Add-Content -Path $profilePath -Value @("", $marker, ". `"$envFile`"", "# <<< pi-agent workbench <<<")
-        } "update profile"
-        if ($DryRun) { Write-Host "    [dry-run] would update $profilePath" } else { Ok "updated $profilePath" }
+    $envFile = Join-Path $Dest "workbench.env"
+    Do-It { "`$env:PI_WORKBENCH = `"$RepoRoot\toolbox`"" | Set-Content -Path $envFile -Encoding UTF8 } "write workbench.env"
+    Ok "wrote $envFile"
+
+    $profilePath = $PROFILE.CurrentUserAllHosts
+    $marker = "# >>> pi-agent workbench >>>"
+    $hasMarker = (Test-Path $profilePath) -and (Select-String -Path $profilePath -SimpleMatch $marker -Quiet)
+    if ($hasMarker) {
+        Ok "$profilePath already sources workbench.env"
     } else {
-        Warn "skipped; add manually:  . `"$envFile`""
+        $go = $Yes -or $DryRun
+        if (-not $go) {
+            $answer = Read-Host "    append to $profilePath ? [Y/n]"
+            $go = -not ($answer -match '^[nN]')
+        }
+        if ($go) {
+            Do-It {
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $profilePath) | Out-Null
+                Add-Content -Path $profilePath -Value @("", $marker, ". `"$envFile`"", "# <<< pi-agent workbench <<<")
+            } "update profile"
+            if ($DryRun) { Write-Host "    [dry-run] would update $profilePath" } else { Ok "updated $profilePath" }
+        } else {
+            Warn "skipped; add manually:  . `"$envFile`""
+        }
     }
+    $env:PI_WORKBENCH = Join-Path $RepoRoot "toolbox"
 }
-$env:PI_WORKBENCH = Join-Path $RepoRoot "toolbox"
 
 # ---------------------------------------------------------------- 6. smoke
 Write-Step 6 "smoke tests"
@@ -135,7 +141,7 @@ function Smoke([string]$name, [scriptblock]$sb) {
 }
 Smoke "scan_injection --help" { & $Python (Join-Path $Dest "bin\scan_injection.py") --help }
 Smoke "triage_gate status"    { & $Python (Join-Path $Dest "bin\triage_gate.py") status }
-Smoke "framework cli --help"  { $env:PYTHONPATH = (Join-Path $RepoRoot "toolbox"); & $Python -m framework.cli --help }
+if (-not $Minimal) { Smoke "framework cli --help"  { $env:PYTHONPATH = (Join-Path $RepoRoot "toolbox"); & $Python -m framework.cli --help } }
 Smoke "no-secrets check"      { & $Python (Join-Path $RepoRoot "scripts\check_no_secrets.py") --quiet }
 if ($Node -and (Test-Path (Join-Path $RepoRoot "eval\mirror\score.mjs"))) {
     Smoke "eval/mirror verify" { & $Node (Join-Path $RepoRoot "eval\mirror\score.mjs") verify }
