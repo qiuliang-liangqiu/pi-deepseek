@@ -104,6 +104,7 @@ python scripts/doctor.py          # 环境表格；--json 给机器读，--stric
 pi auth login deepseek --api-key     # 交互粘贴 key，写进 ~/.pi/agent/auth.json
 pi auth check --provider deepseek --json   # {"status":"ready",...}
 # 或者：export DEEPSEEK_API_KEY=sk-...
+# 或者（会把 key 从文件读、顺带写默认模型）：bash scripts/set-api.sh --key-file ~/k.txt
 ```
 
 **工具箱路径**（bootstrap 已写进 workbench.env，手动装的话）：

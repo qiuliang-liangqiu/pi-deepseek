@@ -2,6 +2,30 @@
 
 三条路线，从最省事到最可控。任选一条即可，**不要三条混着填**（优先级见文末）。
 
+## 0. 只给一个 key 的时候：用脚本（推荐用这种方式分发给别人）
+
+如果你手上只有一串 key，要把它变成"能跑的 pi"，不要直接把 key 贴在聊天/工单里，走这个：
+
+```bash
+bash scripts/set-api.sh                       # 交互：provider + 隐藏输入 key
+bash scripts/set-api.sh --key-file ~/k.txt    # 从文件读，key 不进 shell 历史
+bash scripts/set-api.sh --provider myproxy --base-url https://gw.example.com/v1 \
+     --key-file ~/k.txt --model my-model
+bash scripts/set-api.sh --dry-run             # 只打印会写什么
+```
+
+它做四件事，**不会**打印 key：
+
+| 动作 | 细节 |
+|---|---|
+| 备份 | `auth.json` / `settings.json` / `models.json` → `*.bak-<时间戳>` |
+| 写 key | 合并进 `auth.json`（其他 provider 保留），文件权限 600 |
+| 定默认 | `settings.json` 的 `defaultProvider/defaultModel/defaultThinkingLevel` |
+| 可选端点 | 给了 `--base-url` 才写 `models.json`，`api: openai-completions` |
+
+写完自动跑 `pi auth check` 复核（仅当写的是默认目录 `~/.pi/agent`）。
+用完记得删 key 文件：`shred -u ~/k.txt`（或 `rm`）。
+
 ## A. 用 pi 自己登录（最快）
 
 ```bash
