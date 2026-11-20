@@ -110,16 +110,16 @@ def source_key() -> str:
     return f"gh:{repo}@{branch}"
 
 
-def version_sources() -> list[tuple[str, str]]:
-    """按可靠性排序的版本源：raw（快）→ GitHub API（权威但有 60/h 限额）→ jsDelivr。"""
+def version_sources() -> list[str]:
+    """按可靠性排序：GitHub API（权威，60/h/IP）→ raw（快但可能缓存旧值）→ jsDelivr。"""
     override = os.environ.get("PI_UPDATE_URL", "").strip()
     if override:
         return [override]
     repo = os.environ.get("PI_UPDATE_REPO", "").strip() or DEFAULT_REPO
     branch = os.environ.get("PI_UPDATE_BRANCH", "").strip() or DEFAULT_BRANCH
     return [
-        f"https://raw.githubusercontent.com/{repo}/{branch}/{VERSION_REL}",
         f"https://api.github.com/repos/{repo}/contents/{VERSION_REL}?ref={branch}",
+        f"https://raw.githubusercontent.com/{repo}/{branch}/{VERSION_REL}",
         f"https://cdn.jsdelivr.net/gh/{repo}@{branch}/{VERSION_REL}",
     ]
 

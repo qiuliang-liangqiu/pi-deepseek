@@ -251,7 +251,7 @@ bash scripts/update.sh --no-pull      # 跳过 git pull（用当前 checkout）
 
 版本契约只有一个文件：仓库里的 `agent/VERSION`（semver），安装/更新后落在
 `~/.pi/agent/VERSION`。扩展 `update-check` 在每次会话启动时异步比对远端
-（`raw.githubusercontent.com` → GitHub API → jsDelivr 依次回退），结果缓存 6 小时：
+（GitHub API → `raw.githubusercontent.com` → jsDelivr 依次回退），结果缓存 6 小时：
 
 - 有新版本：footer 显示 `wb ↑ <新版本>`，并提示 `/wb-update`（同一版本 24 小时只提示一次）
 - `/wb-check`：忽略缓存强制检查
