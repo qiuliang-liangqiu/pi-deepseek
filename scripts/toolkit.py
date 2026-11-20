@@ -503,10 +503,15 @@ def main() -> int:
     ap.add_argument("--no-versions", action="store_true", help="skip version probing (offline)")
     ap.add_argument("--refresh", action="store_true", help="ignore the 7-day version cache")
     ap.add_argument("--with-versions", action="store_true", help="with --check: also resolve latest")
+    ap.add_argument("--count-missing", action="store_true",
+                    help="print only the number of missing tools (ASCII, for shells/CI)")
     args = ap.parse_args()
 
     rows = survey()
 
+    if args.count_missing:
+        print(sum(1 for r in rows if not r["installed"]))
+        return 0
     if args.json:
         print(json.dumps({"platform": plat(), "tools": rows}, ensure_ascii=False, indent=2))
         return 0

@@ -8,6 +8,8 @@
 #   bash scripts/bootstrap.sh --minimal    # agent layer only: no PI_WORKBENCH, no toolbox smoke
 #   bash scripts/bootstrap.sh --api        # after install: configure the API key + verify (one step)
 #   bash scripts/bootstrap.sh --api --key-file ~/k.txt --provider deepseek --model deepseek-flash
+#   bash scripts/bootstrap.sh --tools      # 装完后：检查并（问过后）安装推荐工具
+#   bash scripts/bootstrap.sh --tools-all --yes --allow-sudo   # 全装（Linux 需要 sudo 时）
 #
 # Idempotent: re-running backs up the previous agent dir and reinstalls.
 # Never touches auth.json / settings.json / mcp.json (only creates examples' copies).
@@ -16,6 +18,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${PI_AGENT_DIR:-$HOME/.pi/agent}"
 DRY=0; SMOKE=1; YES=0; MINIMAL=0; API=0; KEY_FILE=""; PROVIDER="deepseek"; MODEL="deepseek-flash"; BASE_URL=""; VERIFY=1
+TOOLS=0; TOOLS_ALL=0; ALLOW_SUDO=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
@@ -29,6 +32,9 @@ while [ $# -gt 0 ]; do
     --model) MODEL="${2:-}"; shift; shift ;;
     --base-url) BASE_URL="${2:-}"; shift; shift ;;
     --no-verify) VERIFY=0; shift ;;
+    --tools) TOOLS=1; shift ;;
+    --tools-all) TOOLS=1; TOOLS_ALL=1; shift ;;
+    --allow-sudo) ALLOW_SUDO=1; shift ;;
     -h|--help) sed -n '2,12p' "$0" | sed 's/^# *//'; exit 0 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
@@ -215,6 +221,48 @@ if [ "$API" = 1 ]; then
     else
       warn "model did not reply — check: pi auth check --provider $PROVIDER --json"
       FAIL=1
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------- 8. tools (optional)
+if [ "$TOOLS" = 1 ]; then
+  c "1;36" "
+[8/8] tools（--tools）"
+  TK="$REPO_ROOT/scripts/toolkit.py"
+  if [ ! -f "$TK" ]; then
+    warn "scripts/toolkit.py not found (partial download?) — skipping"
+  else
+    MISSING="$("$PY" "$TK" --count-missing 2>/dev/null || echo "?")"
+    if [ "$MISSING" = "0" ]; then
+      ok "all catalog tools already installed"
+    else
+      warn "$MISSING tools missing from the catalog"
+      if [ "$TOOLS_ALL" = 1 ]; then
+        PICK="all"
+      else
+        PICK="jq,ripgrep,fd,7z,nmap,pwntools,pycryptodome,z3,binwalk,exiftool"
+      fi
+      if [ "$DRY" = 1 ]; then
+        warn "[dry-run] would run: toolkit.py --install $PICK"
+      else
+        GO=1
+        if [ "$YES" = 0 ] && [ -t 0 ]; then
+          printf "  install %s? [Y/n] " "$PICK"
+          read -r a; case "$a" in n|N) GO=0 ;; esac
+        fi
+        if [ "$GO" = 0 ]; then
+          warn "skipped; run later: python scripts/toolkit.py --install"
+        else
+          TARGS=(--install "$PICK" --yes)
+          [ "$ALLOW_SUDO" = 1 ] && TARGS+=(--allow-sudo)
+          if "$PY" "$TK" "${TARGS[@]}"; then
+            ok "tools installed"
+          else
+            warn "some tools failed — run: python scripts/toolkit.py --check"
+          fi
+        fi
+      fi
     fi
   fi
 fi

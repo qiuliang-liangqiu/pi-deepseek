@@ -74,6 +74,13 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -Api   # -Api 会
 
 `--api` 装完会问你要 key（输入不回显），写 `auth.json` + 默认模型，并跑一次
 `pi -p "reply pong"` 确认真能出 token。非交互用 `--api --key-file ~/k.txt`。
+
+**工具不会自动装**（装软件必须经过你同意）。想要一条命令连工具一起：
+
+```bash
+bash scripts/bootstrap.sh --api --tools          # 问过你之后装 10 个常用工具
+bash scripts/bootstrap.sh --tools-all --yes      # 全装 32 个（Linux 需加 --allow-sudo）
+```
 不想这次就配 API 就省略 `--api`，先用 `bash scripts/bootstrap.sh` 装配置。
 
 克隆不下来就换协议（HTTPS 和 SSH 谁通不一定）：
