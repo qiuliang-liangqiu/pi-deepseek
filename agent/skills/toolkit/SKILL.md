@@ -24,7 +24,9 @@ python scripts/toolkit.py --install jq,ffuf       # 指定 id
 python scripts/toolkit.py --install web --dry-run # 只打印命令
 ```
 
-- `--install <id>` 先过滤掉已装的，再逐条确认；
+- `--install <id>` 先过滤掉已装的，**先打印「来源 + 版本」计划表**，再逐条确认；
+- `--check --with-versions` 会顺带查缺失工具的最新版本（走 winget/apt/brew/PyPI 接口，缓存 7 天）；
+- `--no-versions` 跳过联网探测（离线/被墙时用），`--refresh` 强制重查；
 - `--yes` 只对**已经点名**的 id 跳过确认，不会扩大范围；
 - `--allow-sudo` 才会执行 `sudo apt ...`，否则打印后跳过；
 - `--dry-run` 一定不动系统。
@@ -32,6 +34,7 @@ python scripts/toolkit.py --install web --dry-run # 只打印命令
 ## 给 agent 的纪律
 
 1. 先 `--check --json`，把"缺什么"用一句话告诉用户，**不要**自动开装。
+   用户问"装哪个版本"就用 `--check --with-versions`，把来源和版本一起报出来。
 2. 用户点头后，只装他选的那几个；装完再跑一次 `--check --json` 确认。
 3. 装不上（网络/权限/没有包管理器）就停下报告，不要换来源、不要下载随机二进制。
 4. 装完的版本落在 `~/.pi/agent/toolkit.json`，后续命令先查这个文件，别再凭记忆假设。

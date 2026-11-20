@@ -175,7 +175,22 @@ python scripts/toolkit.py --check --json          # 给 agent 读
 python scripts/toolkit.py --install               # 交互：编号 / 类别 / all
 python scripts/toolkit.py --install jq,ffuf       # 指定 id
 python scripts/toolkit.py --install web --dry-run # 只打印命令
+python scripts/toolkit.py --check --with-versions # 缺失的顺带查最新版本
 ```
+
+执行前会先打印**安装计划表**（来源 + 解析到的版本），确认后才落盘：
+
+```
+计划安装（windows）：
+  id        来源                        版本    备注
+  jq        winget:jqlang.jq            1.8.2
+  upx       winget:UPX.UPX              5.3.0
+  binwalk   pip:binwalk                 2.1.0   PyPI
+  ffuf      go:github.com/ffuf/ffuf/v2  latest  需要先装: go
+```
+
+版本来源：winget `show`、`apt-cache policy`、`brew info --json`、PyPI JSON、`npm view`；
+结果缓存 7 天（`--refresh` 强制重查，`--no-versions` 跳过联网探测）。
 
 安全边界：`--yes` 只对已点名的 id 跳过确认；`--allow-sudo` 才会跑 `sudo apt`；
 `--dry-run` 不动系统；没有包管理器就报"装不上"而不是换来源。
