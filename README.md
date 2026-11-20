@@ -8,6 +8,7 @@
 ```
 agent/      运行时配置（直接放进 ~/.pi/agent）
 toolbox/    跑分命令行 framework + SOP/PLAYBOOK/PITFALLS
+docs/       API 配置、为什么用 DeepSeek
 reports/    复盘怎么写（模板 + 脱敏规则；真实复盘不入库）
 eval/       行为镜像（mirror）+ skill 路由评测
 projects/   其他落地项目
@@ -91,10 +92,15 @@ python scripts/doctor.py          # 环境表格；--json 给机器读，--stric
 
 ### 3. 填两样东西
 
+**模型**：一条命令就行，细节见 [`docs/API-CONFIG.md`](docs/API-CONFIG.md)。
+
 ```bash
-# 1) 模型：~/.pi/agent/settings.json（provider/model）；key 放 ~/.pi/agent/auth.json
-#    格式见 examples/README.md
-# 2) 工具箱路径（bootstrap 已写进 workbench.env，手动装的话）：
+pi auth login deepseek --api-key     # 交互粘贴 key，写进 ~/.pi/agent/auth.json
+pi auth check --provider deepseek --json   # {"status":"ready",...}
+# 或者：export DEEPSEEK_API_KEY=sk-...
+```
+
+**工具箱路径**（bootstrap 已写进 workbench.env，手动装的话）：
 export PI_WORKBENCH="$PWD/toolbox"
 
 # 跑分平台地址没有默认值，必须自己给：
@@ -255,6 +261,20 @@ cd toolbox && python -m unittest discover -s framework/tests
 ```
 
 一次只改一个文件，指标不降再合并——否则你分不清是哪条规则起作用。
+
+## 为什么用 DeepSeek
+
+这套配置不是"模型无关"的通用模板：**9 路子代理并发 + 1M 上下文 + 显式思考档位**这三个需求，
+共同决定了模型选择。`deepseek-flash` 的缓存读价格是输入的 1/50，多开 worker 反复读同一批
+`AGENTS.md`/skill/源码时边际成本接近 0；1M 上下文让"整段保留会话"成为默认策略，
+不必因为 compaction 丢掉"已排除"的结论。
+
+pi 对 DeepSeek 有专门适配（`thinkingFormat: "deepseek"`、
+`requiresReasoningContentOnAssistantMessages`、`supportsStrictMode`），
+所以 triage 能用 `high`、卡住的 hard 题切 `max`，工具参数还能走严格 JSON Schema。
+
+完整理由、不该用的场景、以及"怎么自己量"见 [`docs/WHY-DEEPSEEK.md`](docs/WHY-DEEPSEEK.md)。
+一句话：**别信口号，用失败 stint 中位 / 重开率 / 未开题数 / 尾声开箱数去比。**
 
 ## 已知边界
 
