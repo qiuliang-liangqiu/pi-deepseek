@@ -33,6 +33,29 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Windows: winget drops shims into WinGet/Links and only updates future shells' PATH.
+# Add it ourselves so "install then check" works in the same process/session.
+_WINGET_PKGS = None
+if sys.platform.startswith("win"):
+    _base = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet"
+    for _d in (_base / "Links",):
+        if _d.is_dir():
+            os.environ["PATH"] = str(_d) + os.pathsep + os.environ.get("PATH", "")
+    _WINGET_PKGS = _base / "Packages"
+
+
+def _winget_exe(name: str) -> str:
+    """winget sometimes installs into Packages/<pkg>/ without creating a Links shim."""
+    if not _WINGET_PKGS or not _WINGET_PKGS.is_dir():
+        return ""
+    for pat in (f"{name}.exe", f"{name}.cmd", name):
+        hits = sorted(_WINGET_PKGS.glob(f"*/{pat}"))
+        if not hits:
+            hits = sorted(_WINGET_PKGS.glob(f"*/*/{pat}"))
+        if hits:
+            return str(hits[0])
+    return ""
+
 AGENT_DIR = Path(os.environ.get("PI_AGENT_DIR") or (Path.home() / ".pi" / "agent"))
 STATE = AGENT_DIR / "toolkit.json"
 
@@ -198,7 +221,7 @@ def plat() -> str:
 
 
 def probe_binary(name: str, version_args: list[str]) -> tuple[bool, str]:
-    path = shutil.which(name)
+    path = shutil.which(name) or _winget_exe(name)
     if not path:
         return False, ""
     if not version_args:
