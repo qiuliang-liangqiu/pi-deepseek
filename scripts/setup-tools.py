@@ -386,6 +386,7 @@ def os_title(os_name: str) -> str:
 
 
 PORTABLE = Path(__file__).resolve().parent / "portable-vm.py"
+WORK_DIR = Path(os.environ.get("PI_VM_DIR") or (Path.home() / ".pi" / "vm"))
 QEMU_SSH_PORT = 2222
 QEMU_USER = "pi"
 
@@ -409,6 +410,12 @@ def qemu_state() -> tuple[bool, bool, bool]:
 
 def qemu_ensure(args) -> bool:
     """Provision (download) and start the bundled QEMU VM if needed."""
+    if IS_WIN:
+        has_kali_wsl = any("kali" in d.lower() for d in wsl_dists())
+        if not has_kali_wsl:
+            out.append(Target("kali-wsl", "Kali（WSL，需安装：wsl --install -d kali-linux）",
+                              "wsl-install", "kali", os_name="kali"))
+
     have_script, have_image, running = qemu_state()
     if not have_script:
         print("    ! 找不到 scripts/portable-vm.py")
@@ -441,6 +448,69 @@ def qemu_ensure(args) -> bool:
             print("    ! 启动失败，看 ~/.pi/vm/console.log")
             return False
     return True
+
+
+def kali_qemu_ensure(target: Target, args) -> bool:
+    """Boot the user-provided Kali qcow2 (no cloud-init: default kali/kali)."""
+    img = Path(os.environ.get("PI_KALI_IMAGE") or (WORK_DIR / "kali.qcow2"))
+    if not img.exists():
+        print(f"    ! 需要 Kali 的 qcow2：放到 {img} 或设置 PI_KALI_IMAGE")
+        print("      官方镜像：https://cdimage.kali.org/current/kali-linux-2026.3-qemu-amd64.7z"
+              "（3.9 GB，解压后得到 .qcow2）")
+        return False
+    if args.dry_run:
+        print(f"    [dry-run] 会启动 {img} 并把 22 转发到 127.0.0.1:{target.port}")
+        return True
+    running = False
+    pidf = WORK_DIR / f"kali-{target.port}.pid"
+    if pidf.exists():
+        try:
+            os.kill(int(pidf.read_text().strip() or 0), 0)
+            running = True
+        except (OSError, ValueError):
+            running = False
+    if not running:
+        qemu = find_qemu()
+        if not qemu:
+            print("    ! 没有 qemu：先跑 python scripts/portable-vm.py setup")
+            return False
+        argv = [qemu, "-accel", best_accel(qemu) or "tcg", "-m", "2048", "-smp", "2",
+                "-drive", f"file={img},if=virtio,format=qcow2",
+                "-netdev", f"user,id=n0,hostfwd=tcp:127.0.0.1:{target.port}-:22",
+                "-device", "virtio-net-pci,netdev=n0", "-display", "none",
+                "-serial", "file:" + str(WORK_DIR / "kali-console.log")]
+        print("    启动 Kali：" + " ".join(argv))
+        proc = subprocess.Popen(argv, stdout=(WORK_DIR / "kali-qemu.log").open("ab"),
+                                stderr=subprocess.STDOUT)
+        pidf.write_text(str(proc.pid), encoding="utf-8")
+        sh(["ssh-keygen", "-R", f"[127.0.0.1]:{target.port}"], timeout=20)
+        print("    等 SSH（Kali 的 sshd 可能要在 guest 里开启）…")
+        for _ in range(60):
+            rc, _ = sh(["ssh", "-p", str(target.port), "-o", "BatchMode=yes",
+                        "-o", "ConnectTimeout=4", "-o", "StrictHostKeyChecking=no",
+                        f"{target.user}@127.0.0.1", "true"], timeout=15)
+            if rc == 0:
+                break
+            time.sleep(3)
+    # 密码 kali/kali 交给 askpass
+    _SSH_PW[target.alias or target.host] = os.environ.get("PI_KALI_PASSWORD", "kali")
+    return True
+
+
+def wsl_install_kali(args) -> int:
+    cmd = ["wsl.exe", "--install", "-d", "kali-linux"]
+    print("    将执行：" + " ".join(cmd) + "（需要一次 UAC，装完通常要重启）")
+    if args.dry_run:
+        return 0
+    if not args.yes:
+        try:
+            if input("    继续？[y/N] ").strip().lower() not in ("y", "yes"):
+                return 0
+        except (EOFError, KeyboardInterrupt):
+            return 0
+    rc, _ = run(cmd, timeout=3600, want_tty=True)
+    print("    完成，重启后重跑本脚本就能看到 Kali 目标" if rc == 0 else f"    ! exit {rc}")
+    return 0
 
 
 def docker_ok() -> bool:
@@ -483,6 +553,12 @@ def docker_ensure(image: str, name: str = DOCKER_NAME, dry: bool = False) -> boo
 
 def targets() -> list[Target]:
     out: list[Target] = []
+    if IS_WIN:
+        has_kali_wsl = any("kali" in d.lower() for d in wsl_dists())
+        if not has_kali_wsl:
+            out.append(Target("kali-wsl", "Kali（WSL，需安装：wsl --install -d kali-linux）",
+                              "wsl-install", "kali", os_name="kali"))
+
     have_script, have_image, running = qemu_state()
     if have_script:
         state = "运行中" if running else ("已就绪" if have_image else "需下载镜像")
@@ -494,6 +570,9 @@ def targets() -> list[Target]:
         if docker_ok():
             out.append(Target("docker", "Docker 容器（Ubuntu，代为运行）", "docker", "docker",
                               os_name="ubuntu", image="ubuntu:24.04", container=DOCKER_NAME))
+            out.append(Target("docker-kali", "Kali（Docker 容器，工具最全）", "docker", "docker",
+                              os_name="kali", image="kalilinux/kali-rolling",
+                              container="pi-kali"))
     for d in wsl_dists():
         dl = d.lower()
         key = "wsl:" + d
@@ -536,6 +615,11 @@ def targets() -> list[Target]:
             d = "linux"
         out.append(Target("apt", f"{os_title(d)}（本机 apt）", "apt", "host",
                           distro=d, os_name=d))
+    kali_img = Path(os.environ.get("PI_KALI_IMAGE") or (WORK_DIR / "kali.qcow2"))
+    if kali_img.exists():
+        out.append(Target("kali-qemu", "自带 Kali（QEMU 镜像，选用 kali/kali 登录）", "ssh", "qemu",
+                          host="127.0.0.1", port=2223, user="kali", os_name="kali",
+                          provisioner="qemu-kali"))
     return out
 
 
@@ -712,7 +796,7 @@ def winget_has(wid: str) -> bool:
 
 
 def make_plan(target: Target, ids: list[str] | None, groups: list[str] | None) -> list[dict]:
-    if target.kind == "unsupported":
+    if target.kind in ("unsupported", "wsl-install"):
         return []
     rows = []
     for t in CATALOG:
@@ -750,6 +834,15 @@ def make_plan(target: Target, ids: list[str] | None, groups: list[str] | None) -
 
 def show_plan(rows: list[dict], target: Target) -> None:
     print(f"\n目标：{target.label}")
+    if target.kind == "wsl-install":
+        print("  还没安装：选中它会执行 wsl --install -d kali-linux（一次 UAC，装完多半要重启）")
+        return
+    if target.kind == "unsupported":
+        print("  这个发行版不在支持范围（只覆盖 Debian/Ubuntu/Kali 的 apt）：")
+        print("    1) 用 Ubuntu/Kali 的 WSL 或 VM（推荐）")
+        print("    2) 用 Docker：kalilinux/kali-rolling 或 ubuntu:24.04")
+        print("    3) 按 docs/TOOLS.md 的 apt 列手工装")
+        return
     print(f"  {'id':<12} {'组':<10} {'包名':<34} 状态")
     missing_win = [r["tool"].id for r in rows
                    if not r["installed"] and not r["available"] and not r["fallback"]]
@@ -1206,6 +1299,8 @@ def main() -> int:
             print(f"{target.label} 还没开机或拿不到 IP。启动它（vmrun start \"{target.vmx}\"）"
                   f"后重跑，或加 --ssh-host <ip>。")
             return 2
+    if target.kind == "ssh" and target.provisioner == "qemu-kali":
+        target.password_hint = True
     if target.kind == "ssh" and target.provisioner == "qemu" and not ssh_reachable(target, interactive=False):
         print("虚拟机没起来或 SSH 还没就绪：python scripts/portable-vm.py start")
         print("日志：~/.pi/vm/console.log")
@@ -1223,6 +1318,11 @@ def main() -> int:
     if target.provisioner == "qemu":
         if not qemu_ensure(args):
             return 1
+    if target.provisioner == "qemu-kali":
+        if not kali_qemu_ensure(target, args):
+            return 1
+    if target.kind == "wsl-install":
+        return wsl_install_kali(args)
 
     if args.kali_meta and (target.os_name or "").lower() == "kali":
         cmd = "LC_ALL=C apt-get install -y kali-linux-headless"

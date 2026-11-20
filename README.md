@@ -269,6 +269,9 @@ python scripts/setup-tools.py --install-wsl              # 没装 WSL 时帮你�
 | VMware 虚拟机 | `vmrun list` + 扫 `Documents\Virtual Machines`（自定义目录用 `VM_DIRS`） | `ssh`：先用 `~/.ssh/config` 的密钥；**密钥不通就问密码**（不回显，可 `--ssh-password-file`）；拿不到 IP 会问，或 `--start-vm` 帮你开机 |
 | 本机 Linux | `/etc/os-release` | `apt-get`（需 `--allow-sudo`） |
 | **自带 QEMU 虚拟机** | `scripts/portable-vm.py` 存在时**总是出现** | 里面是 Ubuntu 24.04；不存在就先下镜像（600 MB）再启动 |
+| **Kali（WSL）** | 总是出现；没装时标"需安装" | 选中就执行 `wsl --install -d kali-linux`（一次 UAC） |
+| **Kali（Docker）** | docker 可用时出现 | `kalilinux/kali-rolling` 容器 |
+| **Kali（QEMU 镜像）** | `~/.pi/vm/kali.qcow2` 或 `PI_KALI_IMAGE` 存在时出现 | 用官方 qemu 镜像，默认 `kali/kali` 登录 |
 | Docker 容器 | `docker info` 可用时出现在菜单里 | 容器内 `apt-get`（root，无需 sudo） |
 
 Windows 上 gdb/patchelf/qemu-user 这类**没有 Windows 包**的工具，脚本会弹菜单让你选去处
