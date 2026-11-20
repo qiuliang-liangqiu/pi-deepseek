@@ -159,6 +159,9 @@ smoke "triage_gate status"    "$PY" "$DEST/bin/triage_gate.py" status
 if [ "$MINIMAL" = 0 ]; then
   smoke "framework cli --help"  env PYTHONPATH="$REPO_ROOT/toolbox" "$PY" -m framework.cli --help
 fi
+if [ -f "$REPO_ROOT/scripts/toolkit.py" ]; then
+  smoke "toolkit --check" "$PY" "$REPO_ROOT/scripts/toolkit.py" --check
+fi
 if [ -f "$REPO_ROOT/scripts/check_no_secrets.py" ]; then
   smoke "no-secrets check" "$PY" "$REPO_ROOT/scripts/check_no_secrets.py" --quiet
 fi

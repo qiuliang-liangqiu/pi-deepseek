@@ -164,6 +164,24 @@ python -m framework.cli panic
 cd toolbox && python -m unittest discover -s framework/tests -v
 ```
 
+## 工具自检与按需安装
+
+CTF 工具缺什么不该靠猜。`scripts/toolkit.py` 有一份**白名单目录**（30 个工具，8 个类别），
+只执行包管理器命令，绝不 `curl | sh`、不从 releases 下二进制：
+
+```bash
+python scripts/toolkit.py --check                 # ✓ 已装 / · 缺失
+python scripts/toolkit.py --check --json          # 给 agent 读
+python scripts/toolkit.py --install               # 交互：编号 / 类别 / all
+python scripts/toolkit.py --install jq,ffuf       # 指定 id
+python scripts/toolkit.py --install web --dry-run # 只打印命令
+```
+
+安全边界：`--yes` 只对已点名的 id 跳过确认；`--allow-sudo` 才会跑 `sudo apt`；
+`--dry-run` 不动系统；没有包管理器就报"装不上"而不是换来源。
+结果写入 `~/.pi/agent/toolkit.json`，配套 skill `agent/skills/toolkit/` 告诉 agent
+先查再装、绝不擅自安装。
+
 ## 复盘层与评测
 
 - `reports/README.md`：**如何写自己的复盘**（结构模板 + 脱敏规则）。真实比赛的复盘不进仓库。
