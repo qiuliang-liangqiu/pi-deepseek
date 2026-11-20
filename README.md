@@ -251,7 +251,7 @@ bash scripts/update.sh --no-pull      # 跳过 git pull（用当前 checkout）
 
 版本契约只有一个文件：仓库里的 `agent/VERSION`（semver），安装/更新后落在
 `~/.pi/agent/VERSION`。扩展 `update-check` 在每次会话启动时异步比对远端
-（`raw.githubusercontent.com`，失败回退 jsDelivr），结果缓存 6 小时：
+（`raw.githubusercontent.com` → GitHub API → jsDelivr 依次回退），结果缓存 6 小时：
 
 - 有新版本：footer 显示 `wb ↑ <新版本>`，并提示 `/wb-update`（同一版本 24 小时只提示一次）
 - `/wb-check`：忽略缓存强制检查
@@ -266,6 +266,10 @@ bash scripts/update.sh --no-pull      # 跳过 git pull（用当前 checkout）
 **发新版本**：改 `agent/VERSION`（例如 `1.0.0` → `1.0.1`）并 push 即可；
 想让人看得更清楚再加一个 `v1.0.1` tag。别的机器下次启动就会看到提示，
 但**不会自动升级**，要用户点确认。
+
+如果某台机器是配置源头（`~/.pi/agent` 比仓库新），在它的 `~/.pi/agent/.update-hold`
+写一行理由：`apply` 会直接拒绝，避免被仓库旧文件覆盖；确认要更新时删掉该文件，
+或 `apply --ignore-hold`。
 
 ## 工具自检与按需安装
 

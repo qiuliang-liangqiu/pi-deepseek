@@ -100,7 +100,18 @@ def local_version(agent: Path) -> str | None:
     return None
 
 
-def remote_urls() -> list[str]:
+def source_key() -> str:
+    """缓存键：只看“哪个仓库/分支/自定义 URL”，不看这次走了哪个镜像。"""
+    override = os.environ.get("PI_UPDATE_URL", "").strip()
+    if override:
+        return f"url:{override}"
+    repo = os.environ.get("PI_UPDATE_REPO", "").strip() or DEFAULT_REPO
+    branch = os.environ.get("PI_UPDATE_BRANCH", "").strip() or DEFAULT_BRANCH
+    return f"gh:{repo}@{branch}"
+
+
+def version_sources() -> list[tuple[str, str]]:
+    """按可靠性排序的版本源：raw（快）→ GitHub API（权威但有 60/h 限额）→ jsDelivr。"""
     override = os.environ.get("PI_UPDATE_URL", "").strip()
     if override:
         return [override]
@@ -108,33 +119,59 @@ def remote_urls() -> list[str]:
     branch = os.environ.get("PI_UPDATE_BRANCH", "").strip() or DEFAULT_BRANCH
     return [
         f"https://raw.githubusercontent.com/{repo}/{branch}/{VERSION_REL}",
+        f"https://api.github.com/repos/{repo}/contents/{VERSION_REL}?ref={branch}",
         f"https://cdn.jsdelivr.net/gh/{repo}@{branch}/{VERSION_REL}",
     ]
 
 
-def fetch_version(timeout: float = 6.0) -> tuple[str | None, str, str]:
+def fetch_once(url: str, timeout: float) -> str:
+    headers = {"User-Agent": "pi-workbench-update/1", "Cache-Control": "no-cache"}
+    if "api.github.com" in url:
+        # 直接拿文件内容，而不是 base64 JSON
+        headers["Accept"] = "application/vnd.github.raw"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read(8192).decode("utf-8-sig", "replace")
+
+
+def parse_payload(raw: str) -> str:
+    text = raw.strip()
+    if not text:
+        return ""
+    if text.startswith("{"):
+        # 少数情况下 API 忽略 raw accept，返回 base64 JSON
+        try:
+            obj = json.loads(text)
+            if isinstance(obj, dict) and isinstance(obj.get("content"), str):
+                import base64
+                text = base64.b64decode(obj["content"]).decode("utf-8-sig", "replace").strip()
+        except Exception:
+            return ""
+    v = text.splitlines()[0].strip() if text else ""
+    return v if VERSION_RE.match(v) else ""
+
+
+def fetch_version(timeout: float = 4.0, attempts: int = 2) -> tuple[str | None, str, str]:
     """返回 (version, url, error)。只接受合法版本串，其他内容当数据丢弃。"""
     last_err = ""
-    for url in remote_urls():
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": "pi-workbench-update/1", "Cache-Control": "no-cache"},
-            )
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                raw = r.read(4096).decode("utf-8-sig", "replace")
-            v = raw.strip().splitlines()[0].strip() if raw.strip() else ""
-            if not VERSION_RE.match(v):
-                last_err = f"invalid version payload from {url}"
-                continue
-            return v, url, ""
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                last_err = f"HTTP 404：远端没有 {VERSION_REL}（分支/仓库名对不对？）"
-            else:
-                last_err = f"HTTP {e.code}: {e.reason}"
-        except Exception as e:  # noqa: BLE001 - 网络失败一律降级
-            last_err = f"{type(e).__name__}: {e}"
+    for url in version_sources():
+        for i in range(max(1, attempts)):
+            try:
+                v = parse_payload(fetch_once(url, timeout))
+                if v:
+                    return v, url, ""
+                last_err = f"invalid payload from {url}"
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    last_err = f"HTTP 404：远端没有 {VERSION_REL}（分支/仓库名对不对？）"
+                else:
+                    last_err = f"HTTP {e.code}: {e.reason} ({url})"
+                break  # 4xx/5xx 重试意义不大，换下一个源
+            except Exception as e:  # noqa: BLE001 - 网络失败换源
+                last_err = f"{type(e).__name__}: {e} ({url})"
+                if i + 1 < attempts:
+                    time.sleep(1.0)
     return None, "", last_err
 
 
@@ -202,7 +239,10 @@ def check(agent: Path, force: bool, timeout: float) -> dict:
         ttl = DEFAULT_TTL
     cache = load_cache(agent)
     t = now()
-    same_source = bool(cache.get("url")) and cache.get("url") == remote_urls()[0]
+    key = source_key()
+    same_source = (cache.get("source") == key) if cache.get("source") else (
+        bool(cache.get("url")) and cache.get("url") == version_sources()[0]
+    )
     # 缓存只在同一来源下有效：换了 PI_UPDATE_URL / 仓库分支时不能拿旧结果比较
     remote = (cache.get("remote") or None) if same_source else None
     url = (cache.get("url") or "") if same_source else ""
@@ -218,7 +258,8 @@ def check(agent: Path, force: bool, timeout: float) -> dict:
         got, got_url, error = fetch_version(timeout)
         if got:
             remote, url = got, got_url
-            cache.update({"remote": got, "url": got_url, "checked_at": t, "failed_at": 0})
+            cache.update({"remote": got, "url": got_url, "source": key,
+                          "checked_at": t, "failed_at": 0})
             save_cache(agent, cache)
         elif remote:
             stale = True
@@ -357,6 +398,14 @@ def download_repo(timeout: float = 60.0) -> tuple[Path, Path]:
 
 def apply(args: argparse.Namespace) -> int:
     agent = agent_dir()
+    hold = agent / ".update-hold"
+    if hold.exists() and not args.ignore_hold:
+        print(f"本机有 {hold.name}，跳过更新：{hold}", file=sys.stderr)
+        reason = read_text(hold)
+        if reason:
+            print(reason, file=sys.stderr)
+        print("确认要更新就删掉这个文件，或加 --ignore-hold。", file=sys.stderr)
+        return 1
     repo = find_repo(agent, args.repo)
     tmp_dir: Path | None = None
     if repo is None:
@@ -445,6 +494,7 @@ def main() -> int:
     p_apply.add_argument("--prune", action="store_true")
     p_apply.add_argument("--no-pull", action="store_true")
     p_apply.add_argument("--allow-downgrade", action="store_true", help="允许仓库版本低于本机时回滚")
+    p_apply.add_argument("--ignore-hold", action="store_true", help="忽略 .update-hold 保护标记")
     p_apply.add_argument("--repo", default="")
 
     args = ap.parse_args()
