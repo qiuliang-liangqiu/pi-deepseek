@@ -208,7 +208,7 @@ python scripts/setup-tools.py --install-wsl              # 没装 WSL 时帮你�
 |---|---|---|
 | Windows 本机 | 总是可用 | `winget` |
 | WSL: Ubuntu / Kali | `wsl.exe -l -q`（UTF-16 解码） | `wsl -d <distro> -u root`，无需 sudo |
-| VMware 虚拟机 | `vmrun list` + 扫 `C:\VM`、`Documents\Virtual Machines` | `ssh`（自动读 `~/.ssh/config` 的 Host 别名；拿不到 IP 会问你，或 `--start-vm` 帮你开机） |
+| VMware 虚拟机 | `vmrun list` + 扫 `C:\VM`、`Documents\Virtual Machines` | `ssh`：先用 `~/.ssh/config` 的密钥；**密钥不通就问密码**（不回显，可 `--ssh-password-file`）；拿不到 IP 会问，或 `--start-vm` 帮你开机 |
 | 本机 Linux | `/etc/os-release` | `apt-get`（需 `--allow-sudo`） |
 
 底层目录仍是 `scripts/toolkit.py`（32 个工具，8 个类别），只执行包管理器命令，

@@ -39,6 +39,8 @@ from pathlib import Path
 IS_WIN = sys.platform.startswith("win")
 IS_LINUX = sys.platform.startswith("linux")
 SSH_CONFIG = Path.home() / ".ssh" / "config"
+_SSH_PW: dict[str, str] = {}
+SSH_PW_FILE = ""
 
 
 # --------------------------------------------------------------------- catalog
@@ -141,13 +143,18 @@ class Target:
     port: int = 22
     alias: str = ""          # ssh config alias, if one matches the IP
     vmx: str = ""
+    os_name: str = ""        # ubuntu | kali | debian | windows | linux
 
 
-def run(argv: list[str], timeout: int = 120, want_tty: bool = False) -> tuple[int, str]:
+def run(argv: list[str], timeout: int = 120, want_tty: bool = False,
+        env: dict | None = None, stdin_text: str | None = None) -> tuple[int, str]:
     try:
-        p = subprocess.run(argv, capture_output=True, timeout=timeout) if not want_tty \
-            else subprocess.run(argv, timeout=timeout)
-        out = (p.stdout or b"") + (p.stderr or b"") if not want_tty else b""
+        if want_tty:
+            p = subprocess.run(argv, timeout=timeout, env=env)
+            return p.returncode, ""
+        p = subprocess.run(argv, capture_output=True, timeout=timeout, env=env,
+                           input=stdin_text.encode() if stdin_text is not None else None)
+        out = (p.stdout or b"") + (p.stderr or b"")
         return p.returncode, out.decode("utf-8", "replace")
     except FileNotFoundError:
         return 127, "not found"
@@ -253,16 +260,46 @@ def vm_candidates() -> list[dict]:
     return list(vms.values())
 
 
+def guest_os(target: Target) -> str:
+    if target.os_name:
+        return target.os_name
+    if target.kind == "ssh" and target.host:
+        host = target.alias or target.host
+        rc, out = run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6",
+                       "-p", str(target.port), host,
+                       "grep -E '^(ID|VERSION_ID)=' /etc/os-release"], timeout=30)
+        if rc == 0:
+            low = out.lower()
+            if "kali" in low:
+                return "kali"
+            if "ubuntu" in low:
+                return "ubuntu"
+            if "debian" in low:
+                return "debian"
+    name = (target.distro or Path(target.vmx).stem or target.label).lower()
+    for osname in ("kali", "ubuntu", "debian"):
+        if osname in name:
+            return osname
+    return ""
+
+
+def os_title(os_name: str) -> str:
+    return {"ubuntu": "Ubuntu", "kali": "Kali", "debian": "Debian", "windows": "Windows"}.get(
+        os_name, os_name or "Linux")
+
+
 def targets() -> list[Target]:
     out: list[Target] = []
     if IS_WIN:
-        out.append(Target("windows", "Windows 本机（winget）", "winget", "host"))
+        out.append(Target("windows", "Windows（本机 winget）", "winget", "host", os_name="windows"))
     for d in wsl_dists():
         dl = d.lower()
         key = "wsl:" + d
         label_kind = "Kali" if "kali" in dl else ("Ubuntu" if "ubuntu" in dl else "Linux")
-        out.append(Target(key, f"WSL: {d}（{label_kind}）", "wsl", d,
-                          distro=d, host="localhost"))
+        osname = "kali" if "kali" in dl else ("ubuntu" if "ubuntu" in dl else
+                                              ("debian" if "debian" in dl else ""))
+        out.append(Target(key, f"{label_kind}（WSL: {d}）", "wsl", d,
+                          distro=d, host="localhost", os_name=osname))
     cfg = ssh_config_hosts()
     for vm in vm_candidates():
         alias = ""
@@ -271,8 +308,11 @@ def targets() -> list[Target]:
                 alias = h["alias"]
                 break
         state = f"运行中 {vm.get('ip') or '(IP 未知)'}" if vm["running"] else "未开机"
-        out.append(Target("vm:" + vm["name"], f"VMware: {vm['name']}（{state}）", "ssh",
-                          vm["vmx"], host=vm.get("ip") or "", alias=alias, vmx=vm["vmx"]))
+        t = Target("vm:" + vm["name"], "", "ssh",
+                   vm["vmx"], host=vm.get("ip") or "", alias=alias, vmx=vm["vmx"])
+        t.os_name = guest_os(t)          # 未开机时退回按 VM 名字猜
+        t.label = f"{os_title(t.os_name)}（虚拟机: {vm['name']} · {state}）"
+        out.append(t)
     if IS_LINUX:
         d = ""
         try:
@@ -280,24 +320,88 @@ def targets() -> list[Target]:
             d = "kali" if "kali" in rel else ("ubuntu" if "ubuntu" in rel else "debian")
         except OSError:
             d = "linux"
-        out.append(Target("apt", f"本机（{d}）", "apt", "host", distro=d))
+        out.append(Target("apt", f"{os_title(d)}（本机 apt）", "apt", "host",
+                          distro=d, os_name=d))
     return out
 
 
 # --------------------------------------------------------------------- exec
-def exec_in(target: Target, cmd: str, timeout: int = 120, tty: bool = False) -> tuple[int, str]:
+_ASKPASS: dict[str, str] = {}
+
+
+def askpass_env(password: str) -> dict:
+    """SSH_ASKPASS helper so a password can be used without a TTY (no sshpass needed)."""
+    key = "askpass"
+    helper = _ASKPASS.get(key)
+    if not helper:
+        import tempfile
+        fd, path = tempfile.mkstemp(prefix="pi-askpass-", suffix=".sh")
+        os.write(fd, b'#!/bin/sh\nprintf "%s\n" "$PI_SSH_PASS"\n')
+        os.close(fd)
+        os.chmod(path, 0o700)
+        _ASKPASS[key] = helper = path
+    env = dict(os.environ)
+    env.update({"PI_SSH_PASS": password, "SSH_ASKPASS": helper,
+                "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": env.get("DISPLAY", ":0")})
+    return env
+
+
+def password_for(target: Target) -> str:
+    """Prompt once per host, honour --ssh-password-file."""
+    key = target.alias or target.host
+    if key in _SSH_PW:
+        return _SSH_PW[key]
+    pw = ""
+    if SSH_PW_FILE:
+        try:
+            pw = Path(SSH_PW_FILE).read_text(encoding="utf-8").strip()
+        except OSError:
+            pw = ""
+    if not pw:
+        user = target.user or target.alias or target.host
+        prompt = f"{user}@{target.host or target.alias} 的 SSH 密码（不回显）: "
+        try:
+            if sys.stdin.isatty():
+                import getpass
+                pw = getpass.getpass(prompt)
+            else:                       # 无终端（CI/管道）：从 stdin 读一行
+                print(prompt, end="", file=sys.stderr, flush=True)
+                pw = sys.stdin.readline().rstrip(chr(13) + chr(10))
+
+        except (EOFError, KeyboardInterrupt):
+            pw = ""
+    _SSH_PW[key] = pw
+    return pw
+
+
+def ssh_argv(target: Target, cmd: str, password: str = "", tty: bool = False,
+             key_only: bool = False) -> list[str]:
+    host = target.alias or (f"{target.user}@{target.host}" if target.user else target.host)
+    argv = ["ssh", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new",
+            "-p", str(target.port)]
+    if key_only:
+        argv += ["-o", "BatchMode=yes"]
+    elif password:
+        argv += ["-o", "PreferredAuthentications=password,keyboard-interactive",
+                 "-o", "PubkeyAuthentication=no", "-o", "NumberOfPasswordPrompts=1"]
+    if tty:
+        argv.append("-t")
+    return argv + [host, cmd]
+
+
+def exec_in(target: Target, cmd: str, timeout: int = 120, tty: bool = False,
+            password: str = "", stdin_text: str | None = None) -> tuple[int, str]:
     if target.kind == "wsl":
         argv = ["wsl.exe", "-d", target.distro, "-u", "root", "--", "bash", "-lc", cmd]
         return run(argv, timeout=timeout)
     if target.kind == "ssh":
-        host = target.alias or f"{target.user}@{target.host}" if target.host else (target.alias or "")
-        if not host:
+        if not (target.host or target.alias):
             return 2, "no ssh host"
-        argv = ["ssh", "-o", "BatchMode=no", "-o", "ConnectTimeout=8", "-p", str(target.port)]
-        if tty:
-            argv.append("-t")
-        argv += [host, cmd]
-        return run(argv, timeout=timeout, want_tty=tty)
+        pw = password or _SSH_PW.get(target.alias or target.host, "")
+        argv = ssh_argv(target, cmd, password=pw, tty=tty)
+        env = askpass_env(pw) if pw else None
+        return run(argv, timeout=timeout, want_tty=tty and not pw, env=env,
+                   stdin_text=stdin_text)
     return run(["bash", "-lc", cmd], timeout=timeout)
 
 
@@ -306,12 +410,19 @@ def exec_probe(target: Target, cmd: str) -> bool:
     return rc == 0
 
 
-def ssh_reachable(target: Target) -> bool:
-    if not target.host:
+def ssh_reachable(target: Target, interactive: bool = True) -> bool:
+    """Key auth first; if that fails, ask for a password and try again."""
+    if not (target.host or target.alias):
         return False
-    host = target.alias or target.host
-    rc, _ = run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6",
-                 "-p", str(target.port), host, "true"], timeout=30)
+    rc, _ = run(ssh_argv(target, "true", key_only=True), timeout=30)
+    if rc == 0:
+        return True
+    if not interactive:
+        return False
+    pw = password_for(target)
+    if not pw:
+        return False
+    rc, _ = run(ssh_argv(target, "true", password=pw), timeout=30, env=askpass_env(pw))
     return rc == 0
 
 
@@ -448,8 +559,16 @@ def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> li
         else:
             print(f"    $ [{target.label}] {cmd}")
             if not dry:
-                tty = target.kind == "ssh"
-                rc, _ = exec_in(target, cmd, timeout=1800, tty=tty)
+                if target.kind == "ssh":
+                    pw = _SSH_PW.get(target.alias or target.host or "", "")
+                    if pw and "sudo " in cmd:            # 无 TTY，用 sudo -S 喂密码
+                        cmd2 = cmd.replace("sudo ", "sudo -S -p '' ", 1)
+                        print("      （sudo 用同一密码，经 stdin 传入）")
+                        rc, _ = exec_in(target, cmd2, timeout=1800, stdin_text=pw + chr(10))
+                    else:
+                        rc, _ = exec_in(target, cmd, timeout=1800, tty=True)
+                else:
+                    rc, _ = exec_in(target, cmd, timeout=1800)
                 if rc != 0:
                     print(f"    ! apt failed (exit {rc})")
 
@@ -521,6 +640,7 @@ def main() -> int:
     ap.add_argument("--ssh-user", default="")
     ap.add_argument("--ssh-port", type=int, default=22)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--ssh-password-file", default="", help="从文件读 SSH 密码（不落 shell 历史）")
     ap.add_argument("--start-vm", action="store_true", help="VM 没开机时用 vmrun start 启动并等 IP")
     ap.add_argument("--install-wsl", action="store_true", help="未装 WSL 时执行 wsl --install -d Ubuntu（需要 UAC）")
     args = ap.parse_args()
@@ -558,6 +678,9 @@ def main() -> int:
         print(f"exit={rc}" + ("；重启后重跑本脚本即可看到 WSL 目标" if rc == 0 else ""))
         return 0
 
+    global SSH_PW_FILE
+    SSH_PW_FILE = args.ssh_password_file
+
     ids = [x.strip() for x in args.only.split(",") if x.strip()] or None
     groups = [x.strip() for x in args.group.split(",") if x.strip()] or None
 
@@ -570,6 +693,8 @@ def main() -> int:
         pool = ts
         if args.target and args.target != "auto":
             pool = [t for t in ts if t.key == args.target or t.key.startswith(args.target)]
+            if not pool and args.target in ("ubuntu", "kali", "debian"):
+                pool = [t for t in ts if t.os_name == args.target]
             if not pool:
                 print(f"target {args.target!r} not found; have: {[t.key for t in ts]}")
                 return 2
@@ -582,6 +707,9 @@ def main() -> int:
 
     if args.target and args.target != "auto":
         pool = [t for t in ts if t.key == args.target or t.key.startswith(args.target)]
+        if not pool and args.target in ("ubuntu", "kali", "debian"):
+            pool = [t for t in ts if t.os_name == args.target]
+            pool.sort(key=lambda t: (not bool(t.host), t.kind != "wsl"))   # 能连的优先
         if not pool:
             print(f"target {args.target!r} not found; have: {[t.key for t in ts]}")
             return 2
