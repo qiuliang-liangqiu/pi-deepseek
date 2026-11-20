@@ -47,7 +47,35 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORK = Path(os.environ.get("PI_VM_DIR") or (Path.home() / ".pi" / "vm"))
-IMAGE_NAME = "noble-server-cloudimg-amd64.img"
+DISTROS = {
+    "ubuntu": {
+        "image": "noble-server-cloudimg-amd64.img",
+        "kind": "cloudimg",
+        "port": 2222,
+        "user": "pi",
+        "password": "pi",
+        "mirrors": [
+            "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/noble/current",
+            "https://mirrors.ustc.edu.cn/ubuntu-cloud-images/noble/current",
+            "https://cloud-images.ubuntu.com/noble/current",
+        ],
+    },
+    "kali": {
+        # 官方只给整机镜像（7z 里是 qcow2），没有 cloud-init；默认 kali/kali
+        "image": "kali-linux-2026.3-qemu-amd64.7z",
+        "kind": "7z",
+        "port": 2223,
+        "user": "kali",
+        "password": "kali",
+        "mirrors": [
+            "https://mirrors.tuna.tsinghua.edu.cn/kali-images/current",
+            "https://mirrors.ustc.edu.cn/kali-images/current",
+            "https://cdimage.kali.org/current",
+        ],
+    },
+}
+DISTRO = "ubuntu"
+IMAGE_NAME = DISTROS[DISTRO]["image"]
 # 官方源在国内常常只有 0.4 MB/s；镜像站 8 MB/s（实测）
 MIRRORS = [
     "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/noble/current",
@@ -194,21 +222,21 @@ def download(url: str, dest: Path, expect_sha: str = "") -> bool:
     return True
 
 
-def sha_for_image() -> str:
-    for base in MIRRORS:
+def sha_for_image(mirrors, name) -> str:
+    for base in mirrors:
         try:
             with urllib.request.urlopen(f"{base}/SHA256SUMS", timeout=30) as r:
                 for line in r.read().decode().splitlines():
-                    if line.strip().endswith(IMAGE_NAME):
+                    if line.strip().endswith(name):
                         return line.split()[0]
         except Exception:
             continue
     return ""
 
 
-def download_any(dest: Path, sha: str) -> bool:
-    for base in MIRRORS:
-        if download(f"{base}/{IMAGE_NAME}", dest, sha):
+def download_any(dest: Path, sha: str, mirrors=None, name="") -> bool:
+    for base in (mirrors or MIRRORS):
+        if download(f"{base}/{name or IMAGE_NAME}", dest, sha):
             return True
         print("   换下一个镜像")
     return False
@@ -243,7 +271,29 @@ def install_qemu(dry: bool) -> bool:
     return False
 
 
+def extract_7z(archive: Path, dest: Path) -> bool:
+    """py7zr keeps us free of an admin-installed 7-Zip."""
+    try:
+        import py7zr  # noqa: F401
+    except ImportError:
+        print("   安装 py7zr（纯 Python 的 7z 解压）…")
+        rc, _ = sh([sys.executable, "-m", "pip", "install", "--user", "py7zr"], timeout=600)
+        if rc != 0:
+            print("   ! pip install py7zr 失败；也可以手动装 7-Zip 后解压")
+            return False
+    import py7zr
+    print(f"   解压 {archive.name} -> {dest}")
+    try:
+        with py7zr.SevenZipFile(archive, mode="r") as z:
+            z.extractall(path=dest)
+    except Exception as exc:
+        print(f"   ! 解压失败：{exc}")
+        return False
+    return True
+
+
 def cmd_setup(args) -> int:
+    d = DISTROS[args.distro]
     WORK.mkdir(parents=True, exist_ok=True)
     free = free_gb(WORK)
     if free >= 0 and free < DISK_MIN_GB:
@@ -251,25 +301,42 @@ def cmd_setup(args) -> int:
         return 1
     if not install_qemu(args.dry_run):
         return 1
-    img = WORK / IMAGE_NAME
+    img = WORK / d["image"]
     if not img.exists():
         if args.dry_run:
-            say(f"[dry-run] 会下载 {IMAGE_URL} -> {img}")
+            say(f"[dry-run] 会下载 {d['mirrors'][0]}/{d['image']} -> {img}")
         else:
-            sha = sha_for_image()
+            sha = sha_for_image(d["mirrors"], d["image"])
             say(f"== 期望 sha256：{sha[:16]}…" if sha else "== 没拿到 SHA256SUMS，跳过校验")
-            if not download_any(img, sha):
+            if not download_any(img, sha, d["mirrors"], d["image"]):
                 return 1
     else:
         say(f"== 镜像已存在：{img}")
+
+    if d["kind"] == "7z":
+        qcow = WORK / (args.distro + ".qcow2")
+        if not qcow.exists():
+            if args.dry_run:
+                say(f"[dry-run] 会解压 {img.name} -> {qcow}")
+            else:
+                if not extract_7z(img, WORK):
+                    return 1
+                found = sorted(WORK.glob("*.qcow2"))
+                if not found:
+                    print("   ! 解压后没找到 .qcow2")
+                    return 1
+                if found[0] != qcow:
+                    found[0].replace(qcow)
+                say(f"   qcow2: {qcow}")
     say(f"\n完成。下一步： python scripts/portable-vm.py start")
     return 0
 
 
 # --------------------------------------------------------------------- run
 def cmd_start(args) -> int:
+    d = DISTROS[args.distro]
     qemu = find_qemu()
-    img = WORK / IMAGE_NAME
+    img = (WORK / f"{args.distro}.qcow2") if d["kind"] == "7z" else (WORK / d["image"])
     if not qemu:
         say("qemu 未安装：先跑 setup")
         return 1
@@ -278,6 +345,13 @@ def cmd_start(args) -> int:
         return 1
 
     WORK.mkdir(parents=True, exist_ok=True)
+    args.user = args.user or d["user"]
+    args.password = args.password or d["password"]
+    args.ssh_port = args.ssh_port or d["port"]
+
+    if d["kind"] == "7z":                      # Kali 整机镜像：没有 cloud-init
+        return _boot_plain(qemu, img, args, d)
+
     user_data, meta_data = cloud_init_files(args.user, args.password)
     seed = WORK / "seed"
     seed.mkdir(exist_ok=True)
@@ -344,12 +418,71 @@ def cmd_start(args) -> int:
         say(f"\n== SSH 就绪： ssh -p {args.ssh_port} {args.user}@127.0.0.1")
         say(f"   或： python scripts/setup-tools.py --target ubuntu "
             f"--ssh-host 127.0.0.1 --ssh-port {args.ssh_port} --ssh-user {args.user}")
-        (WORK / "vm.env").write_text(
-            f"PI_VM_HOST=127.0.0.1\nPI_VM_USER={args.user}\nPI_VM_PORT={args.ssh_port}\n",
-            encoding="utf-8")
+        env_text = "PI_VM_HOST=127.0.0.1" + chr(10)
+        env_text += "PI_VM_USER=" + args.user + chr(10)
+        env_text += "PI_VM_PORT=" + str(args.ssh_port) + chr(10)
+        env_text += "PI_VM_PASSWORD=" + d["password"] + chr(10)
+        (WORK / "vm.env").write_text(env_text, encoding="utf-8")
         return 0
     say("超时：看 " + str(WORK / "console.log") + " / qemu.log")
     return 1
+
+
+def _boot_plain(qemu: str, img: Path, args, d) -> int:
+    """Kali 之类的整机镜像：直连启动，默认 kali/kali，不注入任何东西。"""
+    argv = [
+        qemu, "-accel", (args.accel or best_accel(qemu) or "tcg"),
+        "-m", str(args.mem), "-smp", str(args.cpus),
+        "-drive", f"file={img},if=virtio,format=qcow2",
+        "-netdev", f"user,id=n0,hostfwd=tcp:127.0.0.1:{args.ssh_port}-:22",
+        "-device", "virtio-net-pci,netdev=n0",
+        "-display", "none",
+        "-serial", f"file:{WORK / (args.distro + '-console.log')}",
+    ]
+    say("== QEMU：" + " ".join(argv))
+    say("   注意：官方镜像没有 cloud-init，登录用 " + d["user"] + "/" + d["password"])
+    if args.dry_run:
+        say("[dry-run] 不启动")
+        return 0
+    proc = subprocess.Popen(argv, stdout=(WORK / "qemu.log").open("ab"),
+                            stderr=subprocess.STDOUT)
+    (WORK / "pid").write_text(str(proc.pid), encoding="utf-8")
+    sh(["ssh-keygen", "-R", f"[127.0.0.1]:{args.ssh_port}"], timeout=20)
+    say(f"== 等 SSH（最多 {args.wait}s；若镜像默认关着 sshd，用 console 模式开一次）")
+
+    deadline = time.time() + args.wait
+    while time.time() < deadline:
+        rc, _ = sh(["ssh", "-p", str(args.ssh_port), "-o", "BatchMode=yes",
+                    "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                    f"{args.user}@127.0.0.1", "true"], timeout=25)
+        if rc == 0:
+            say(f"== SSH 就绪： ssh -p {args.ssh_port} {args.user}@127.0.0.1（密码 {d['password']}）")
+            env_text = "PI_VM_HOST=127.0.0.1" + chr(10)
+            env_text += "PI_VM_USER=" + args.user + chr(10)
+            env_text += "PI_VM_PORT=" + str(args.ssh_port) + chr(10)
+            env_text += "PI_VM_PASSWORD=" + d["password"] + chr(10)
+            (WORK / "vm.env").write_text(env_text, encoding="utf-8")
+            return 0
+        time.sleep(5)
+    say("超时。两种处理：")
+    say(f"  1) 看 console：{WORK / (args.distro + '-console.log')}")
+    say(f"  2) 进控制台开 ssh： python scripts/portable-vm.py console --distro {args.distro}")
+    return 1
+
+
+def cmd_console(args) -> int:
+    """Attach a serial console (login kali/kali, then: sudo systemctl enable --now ssh)."""
+    d = DISTROS[args.distro]
+    qemu = find_qemu()
+    img = (WORK / f"{args.distro}.qcow2") if d["kind"] == "7z" else (WORK / d["image"])
+    argv = [qemu, "-accel", (args.accel or best_accel(qemu) or "tcg"),
+            "-m", str(args.mem), "-smp", str(args.cpus),
+            "-drive", f"file={img},if=virtio,format=qcow2",
+            "-netdev", f"user,id=n0,hostfwd=tcp:127.0.0.1:{args.ssh_port or d['port']}-:22",
+            "-device", "virtio-net-pci,netdev=n0", "-nographic"]
+    say("== 串口控制台（退出：Ctrl-A X）")
+    say(f"   login: {d['user']} / {d['password']}   然后： sudo systemctl enable --now ssh")
+    return subprocess.call(argv)
 
 
 def cmd_stop(_args) -> int:
@@ -437,14 +570,15 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    for name in ("check", "setup", "start", "stop", "status", "ssh"):
+    for name in ("check", "setup", "start", "stop", "status", "ssh", "console"):
         p = sub.add_parser(name)
         p.add_argument("--dry-run", action="store_true")
-        p.add_argument("--user", default="pi")
-        p.add_argument("--password", default="pi")
+        p.add_argument("--distro", default="ubuntu", choices=sorted(DISTROS))
+        p.add_argument("--user", default="")
+        p.add_argument("--password", default="")
         p.add_argument("--mem", type=int, default=2048)
         p.add_argument("--cpus", type=int, default=2)
-        p.add_argument("--ssh-port", type=int, default=SSH_PORT)
+        p.add_argument("--ssh-port", type=int, default=0)
         p.add_argument("--http-port", type=int, default=HTTP_PORT)
         p.add_argument("--wait", type=int, default=300)
         p.add_argument("--accel", default="", choices=["", "whpx", "tcg", "kvm"])
@@ -460,6 +594,7 @@ def main() -> int:
         "stop": cmd_stop,
         "status": cmd_status,
         "ssh": cmd_ssh,
+        "console": cmd_console,
     }[args.cmd](args)
 
 

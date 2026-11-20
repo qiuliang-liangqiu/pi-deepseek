@@ -347,12 +347,16 @@ def vm_candidates() -> list[dict]:
         v["name"] = Path(v["vmx"]).stem
         if v["running"] and vr:
             ip = ""
-            for extra in (["-wait"], []):
-                rc, out = run([vr, "getGuestIPAddress", v["vmx"], *extra], timeout=90)
+            # 不带 -wait：它会在 guest 未就绪时阻塞很久，拖慢整个菜单
+            rc, out = run([vr, "getGuestIPAddress", v["vmx"]], timeout=20)
+            cand = out.strip().splitlines()[-1].strip() if rc == 0 and out.strip() else ""
+            if re.match(r"^\d+\.\d+\.\d+\.\d+$", cand):
+                ip = cand
+            else:
+                rc, out = run([vr, "getGuestIPAddress", v["vmx"], "-wait"], timeout=35)
                 cand = out.strip().splitlines()[-1].strip() if rc == 0 and out.strip() else ""
                 if re.match(r"^\d+\.\d+\.\d+\.\d+$", cand):
                     ip = cand
-                    break
             v["ip"] = ip
     return list(vms.values())
 
@@ -410,12 +414,6 @@ def qemu_state() -> tuple[bool, bool, bool]:
 
 def qemu_ensure(args) -> bool:
     """Provision (download) and start the bundled QEMU VM if needed."""
-    if IS_WIN:
-        has_kali_wsl = any("kali" in d.lower() for d in wsl_dists())
-        if not has_kali_wsl:
-            out.append(Target("kali-wsl", "Kali（WSL，需安装：wsl --install -d kali-linux）",
-                              "wsl-install", "kali", os_name="kali"))
-
     have_script, have_image, running = qemu_state()
     if not have_script:
         print("    ! 找不到 scripts/portable-vm.py")
@@ -451,13 +449,23 @@ def qemu_ensure(args) -> bool:
 
 
 def kali_qemu_ensure(target: Target, args) -> bool:
-    """Boot the user-provided Kali qcow2 (no cloud-init: default kali/kali)."""
+    """Download (4 GB, once) and boot the official Kali qemu image."""
     img = Path(os.environ.get("PI_KALI_IMAGE") or (WORK_DIR / "kali.qcow2"))
     if not img.exists():
-        print(f"    ! 需要 Kali 的 qcow2：放到 {img} 或设置 PI_KALI_IMAGE")
-        print("      官方镜像：https://cdimage.kali.org/current/kali-linux-2026.3-qemu-amd64.7z"
-              "（3.9 GB，解压后得到 .qcow2）")
-        return False
+        print("    需要先下载 Kali 官方 QEMU 镜像（约 4 GB，解压后 ~15 GB 空闲更稳）")
+        if args.dry_run:
+            print("    [dry-run] 会执行：portable-vm.py setup --distro kali")
+            return True
+        if not args.yes:
+            try:
+                if input("    现在下载？[Y/n] ").strip().lower() == "n":
+                    return False
+            except (EOFError, KeyboardInterrupt):
+                return False
+        rc = subprocess.call([sys.executable, str(PORTABLE), "setup", "--distro", "kali", "--yes"])
+        if rc != 0 or not img.exists():
+            print("    ! 镜像准备失败（可手动放到 " + str(img) + "）")
+            return False
     if args.dry_run:
         print(f"    [dry-run] 会启动 {img} 并把 22 转发到 127.0.0.1:{target.port}")
         return True
@@ -565,6 +573,12 @@ def targets() -> list[Target]:
         out.append(Target("qemu", f"自带 QEMU 虚拟机（Ubuntu，{state}）", "ssh", "qemu",
                           host="127.0.0.1", port=QEMU_SSH_PORT, user=QEMU_USER,
                           os_name="ubuntu", provisioner="qemu"))
+    kali_img = Path(os.environ.get("PI_KALI_IMAGE") or (WORK_DIR / "kali.qcow2"))
+    if PORTABLE.exists():
+        state = "已就绪" if kali_img.exists() else "需下载约 4 GB"
+        out.append(Target("kali-qemu", f"自带 Kali 虚拟机（QEMU，{state}）", "ssh", "qemu",
+                          host="127.0.0.1", port=2223, user="kali", os_name="kali",
+                          provisioner="qemu-kali"))
     if IS_WIN:
         out.append(Target("windows", "Windows（本机 winget）", "winget", "host", os_name="windows"))
         if docker_ok():
@@ -615,11 +629,6 @@ def targets() -> list[Target]:
             d = "linux"
         out.append(Target("apt", f"{os_title(d)}（本机 apt）", "apt", "host",
                           distro=d, os_name=d))
-    kali_img = Path(os.environ.get("PI_KALI_IMAGE") or (WORK_DIR / "kali.qcow2"))
-    if kali_img.exists():
-        out.append(Target("kali-qemu", "自带 Kali（QEMU 镜像，选用 kali/kali 登录）", "ssh", "qemu",
-                          host="127.0.0.1", port=2223, user="kali", os_name="kali",
-                          provisioner="qemu-kali"))
     return out
 
 
@@ -1299,18 +1308,6 @@ def main() -> int:
             print(f"{target.label} 还没开机或拿不到 IP。启动它（vmrun start \"{target.vmx}\"）"
                   f"后重跑，或加 --ssh-host <ip>。")
             return 2
-    if target.kind == "ssh" and target.provisioner == "qemu-kali":
-        target.password_hint = True
-    if target.kind == "ssh" and target.provisioner == "qemu" and not ssh_reachable(target, interactive=False):
-        print("虚拟机没起来或 SSH 还没就绪：python scripts/portable-vm.py start")
-        print("日志：~/.pi/vm/console.log")
-        return 2
-    if target.kind == "ssh" and not ssh_reachable(target):
-        hint = target.alias or f"{target.user + '@' if target.user else ''}{target.host}"
-        print(f"SSH 连不上 {hint}。检查：虚拟机已开机、sshd 在跑、防火墙放行，或先配好免密：")
-        print(f"  ssh-copy-id {hint}")
-        return 2
-
     if target.kind == "docker":
         if not docker_ensure(target.image or args.docker_image, target.container, args.dry_run):
             return 1
@@ -1318,11 +1315,30 @@ def main() -> int:
     if target.provisioner == "qemu":
         if not qemu_ensure(args):
             return 1
+        if args.dry_run:
+            print(f"    [dry-run] 计划：把工具装进 {target.label}")
+            return 0
     if target.provisioner == "qemu-kali":
         if not kali_qemu_ensure(target, args):
             return 1
+        if args.dry_run:
+            print(f"    [dry-run] 计划：把工具装进 {target.label}")
+            return 0
     if target.kind == "wsl-install":
         return wsl_install_kali(args)
+
+    if target.kind == "ssh":
+        managed = target.provisioner in ("qemu", "qemu-kali")
+        if not ssh_reachable(target, interactive=not managed):
+            if managed:
+                print("虚拟机没起来或 SSH 还没就绪：python scripts/portable-vm.py start"
+                      + (" --distro kali" if target.provisioner == "qemu-kali" else ""))
+                print("日志：~/.pi/vm/console.log（Kali：~/.pi/vm/kali-console.log）")
+            else:
+                hint = target.alias or f"{target.user + '@' if target.user else ''}{target.host}"
+                print(f"SSH 连不上 {hint}。检查：虚拟机已开机、sshd 在跑、防火墙放行，或先配好免密：")
+                print(f"  ssh-copy-id {hint}")
+            return 2
 
     if args.kali_meta and (target.os_name or "").lower() == "kali":
         cmd = "LC_ALL=C apt-get install -y kali-linux-headless"
