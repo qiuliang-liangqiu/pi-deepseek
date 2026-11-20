@@ -3,16 +3,33 @@
 一个跑在 [pi](https://pi.dev) 上的 CTF / 靶场智能体工作台：把「止损纪律」写成可执行代码，
 把每次跑分的经验沉淀成 skill、playbook 和复盘。
 
+**Windows / Linux / macOS 都能装**，一行命令；装过之后再跑同一条命令就是增量更新：
+
+```powershell
+# Windows
+powershell -c "irm https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/install.ps1 | iex"
+```
+```bash
+# Linux / macOS / Git-Bash
+curl -fsSL https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/install.sh | bash
+```
+
+| 支持的目标 | 安装通道 | 说明 |
+|---|---|---|
+| Windows 本机 | winget + pip/gem/go 兜底 | gdb/patchelf 等没有 Windows 包，会标 `不可用` |
+| Ubuntu / Kali / Debian | apt（本机、WSL、或 VMware 虚拟机走 SSH） | 最全；Kali 可用 `--kali-meta` 一次到位 |
+| macOS | brew + pip/gem/go | 部分 Linux 专属工具标 `不可用` |
+
 仓库**只包含方法论与工具**：镜像、会话日志、靶场数据、flag、平台凭据和具体比赛复盘都不在这里。
 
 ```
 agent/      运行时配置（直接放进 ~/.pi/agent）
 toolbox/    跑分命令行 framework + SOP/PLAYBOOK/PITFALLS
-docs/       API 配置、为什么用 DeepSeek
+docs/       API 配置、为什么用 DeepSeek、工具对照表
 reports/    复盘怎么写（模板 + 脱敏规则；真实复盘不入库）
 eval/       行为镜像（mirror）+ skill 路由评测
 projects/   其他落地项目
-scripts/    bootstrap / 安装 / 脱敏检查
+scripts/    一行安装 / 前置检查 / 工具安装 / 增量更新 / 交接打包
 ```
 
 ## 为什么这样拆
@@ -24,40 +41,14 @@ scripts/    bootstrap / 安装 / 脱敏检查
 | **复盘层** `reports/` | 复盘的结构与脱敏规则（示例，不含真实战绩） | 模板 + 规则 |
 | **评测层** `eval/` | 改完 skill 后怎么回归：行为镜像 8 探针/19 检查、14 条路由用例 | `score.mjs` + `route_eval.py` |
 
-## 最快的方式：一行命令
-
-**Windows**（PowerShell）:
-
-```powershell
-powershell -c "irm https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/install.ps1 | iex"
-```
-
-**Linux / macOS / Git-Bash**:
-
-```bash
-curl -fsSL https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/install.sh | bash
-```
-
-它会自己判断：**没装就装，装过就增量更新**。装完按提示填 key 即可。
-
-| 想做的事 | 一条命令 |
-|---|---|
-| 只装前置（python/node/npm/pi） | `curl -fsSL https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/prereq.sh \| bash -s -- --install` |
-| 装 + 配 API key | 上面第一条后面加 `-Api`（PS）或 `--api`（bash） |
-| 装 + 挑工具 | 加 `-Tools` / `--tools` |
-| 只更新不装 | `bash scripts/update.sh` / `powershell -File scripts\update.ps1` |
-
-> 用 jsdelivr 而不是 `raw.githubusercontent.com`：后者在国内经常超时（这台机器实测过）。
-> 两个脚本都带镜像回退，raw 失败会自动换 jsdelivr / fastly。
-
 ## 我要下哪些
 
-**整仓只有 5.4 MB / 326 个文件**，全下最省事。但按目的可以只取一部分：
+**整仓只有 5.7 MB / 340 个文件**，全下最省事。但按目的可以只取一部分：
 
 | 目的 | 需要 | 怎么装 |
 |---|---|---|
-| 让 pi 有纪律 / 防护 / 多 Agent（不跑分） | `agent/`（257 文件，4.5 MB） | `bash scripts/bootstrap.sh --minimal` |
-| **跑分 / CTF 全流程（推荐）** | 全部（5.4 MB） | `bash scripts/bootstrap.sh` |
+| 让 pi 有纪律 / 防护 / 多 Agent（不跑分） | `agent/`（258 文件，4.5 MB） | `bash scripts/bootstrap.sh --minimal` |
+| **跑分 / CTF 全流程（推荐）** | 全部（5.7 MB） | `bash scripts/bootstrap.sh` |
 | 只想读方法论，不装 | `README.md`、`toolbox/docs/{SOP,PLAYBOOK,PITFALLS}.md`、`reports/` | 直接看，不用 clone |
 | 要改代码 / 提 PR | 全部 + `eval/` | 见根 `AGENTS.md` |
 
@@ -81,7 +72,9 @@ cd pi-deepseek-v1 && bash scripts/bootstrap.sh --minimal
 
 > 仓库里**没有**：镜像、会话日志、`teams/`、`sessions/`、比赛附件、任何真实 flag 或 token，也没有具体比赛的战绩。
 
-## 快速开始
+## 快速开始（手动版）
+
+> 不想 clone？往上翻「最快的方式」那两行。下面是想自己控制每一步时用的。
 
 ### 1. 装前置（python / node / pi）
 
