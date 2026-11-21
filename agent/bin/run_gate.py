@@ -96,7 +96,7 @@ def session_from_parent() -> str:
     """
     d = TEAMS / ".pi-pids"
     pid = os.getppid()
-    for _ in range(4):
+    for _ in range(6):
         if pid <= 4:
             break
         f = d / str(pid)
