@@ -30,13 +30,13 @@ skills/ctf/
 ## 配套
 
 - 检索器：`~/.pi/agent/skills/ctf-kb/`（`python scripts/kb.py find|headings|section|read`）
-- 路由评测：`<workbench>/资源添加/tsec-resources/evals/route_eval.py`（14 条用例，见 REPORT.md）
+- 路由评测：`E:/pi/资源添加/tsec-resources/evals/route_eval.py`（14 条用例，见 REPORT.md）
 
 ## 维护
 
 ```bash
 # 上游更新后重新同步（先比对 diff，再重跑上面的 frontmatter 补丁）
-git -C <workbench>/资源添加/tsec-resources/ctf-skills pull
+git -C E:/pi/资源添加/tsec-resources/ctf-skills pull
 ```
 
 ## 许可

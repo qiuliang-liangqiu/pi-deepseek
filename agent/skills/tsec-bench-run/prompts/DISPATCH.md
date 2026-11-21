@@ -56,8 +56,8 @@
 
 ```bash
 # 0) 前置：VPN + token
-curl -s http://<vpn-health-host> | head -c 200        # 必须 status:"ok"
-cd <workbench>/2 && python -m framework.cli status
+curl -s http://10.0.100.58 | head -c 200        # 必须 status:"ok"
+cd E:/pi/2 && python -m framework.cli status
 
 # 0.5) 先查库：同族战例比从零摸索快
 #      read docs/CASELIB/INDEX.md  → 找到同 family 的笔记直接照搬打法链
@@ -84,7 +84,7 @@ python -m framework.cli panic                   # 关掉所有 owned 并逐个�
 | `{CODE}` | `unique_code` |
 | `{HOST}` / `{PORT}` | `run` 打印的地址拆开 |
 | `{DEADLINE}` | 当前时间 + 时间盒（`date +%H:%M`） |
-| `{BB}` | `<workbench>/2/work/bb_<code>.md` |
+| `{BB}` | `E:/pi/2/work/bb_<code>.md` |
 | `{UA}` | 固定浏览器 UA（见 prompts/README.md） |
 
 ## 6. 每轮结束的沉淀（自动，不用管）

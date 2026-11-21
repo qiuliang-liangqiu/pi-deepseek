@@ -1,6 +1,6 @@
 # 作战条令（源自《Pi 智能体高分训练与架构演进深度实战笔记》v2.0 蒸馏）
 
-> 来源：`%USERPROFILE%\Desktop\PI智能体高分训练与架构演进深度实战笔记.docx`
+> 来源：`C:\Users\30367\Desktop\PI智能体高分训练与架构演进深度实战笔记.docx`
 > 用途：跑分/CTF/渗透任务时的行为准则 + 做训练数据、SFT、GRPO 时的规范。
 > 标注：`[可执行]` = 现在就能照做；`[训练侧]` = 做数据集/微调/RL 时才用；`[基建侧]` = 描述 Pi 内核架构，不要假设本地已存在同名机制。
 
@@ -97,7 +97,7 @@ P:       连续 2 轮同一失败命令 −1.5 ；访问外网 −3.0 ；单轮�
 
 ## 8. 复盘沉淀（默认行为，不需要额外一步）
 
-库的位置：`<workbench>/2/docs/CASELIB/`（`framework/caselib.py` 实现，`cli close` 自动触发）。
+库的位置：`E:/pi/2/docs/CASELIB/`（`framework/caselib.py` 实现，`cli close` 自动触发）。
 
 | 来源 | 去向 |
 |---|---|
@@ -115,9 +115,9 @@ P:       连续 2 轮同一失败命令 −1.5 ；访问外网 −3.0 ；单轮�
 ## 9. 分配纪律（portfolio：时间花在哪，比花得快不快更决定分数）`[可执行]`
 
 证据来自 2026-11-16 闭卷一轮（50 题 / 7h51m，28 解 / 12000 分，
-原始 `<run-id>-events.csv`，可用 `skills/tsec-bench-run/tools/analyze_events.py` 复算）
-与 2026-11-17 的 `<run-id>`（2.94h，9 解 / 2000 分；Saltern 已拿 2 flags 后重开 3 次，
-88 分钟 0 分）、2026-11-18 的 `<run-id>`（7.89h，37 解 / 47 flags / 13800；
+原始 `run-48753-events.csv`，可用 `skills/tsec-bench-run/tools/analyze_events.py` 复算）
+与 2026-11-17 的 `run-49340`（2.94h，9 解 / 2000 分；Saltern 已拿 2 flags 后重开 3 次，
+88 分钟 0 分）、2026-11-18 的 `run-49545`（7.89h，37 解 / 47 flags / 13800；
 triage 50 题 15 分钟全开、20:06 提前结束；剩 53 flags；tch3-05 得分后 71 分钟才关）：
 
 - 28 次**做出题**的 stint：中位 **5.3 分钟**，合计 6.09 容器小时；
@@ -174,7 +174,7 @@ triage 50 题 15 分钟全开、20:06 提前结束；剩 53 flags；tch3-05 得�
   auto-recon 关闭；只能 triage.sh + A/B/C/D + close；30 分钟后恢复正常做题。
 - **v12.2 提前结束**：全部 open 题的 `triage.txt` 就绪 → `triage_complete` 校验通过 →
   `triage_done=true` → 立即 A→B，不等 30 分钟。
-- **<run-id> 验证**：triage 15 分钟覆盖 50 题、20:06 提前结束；37 解/47 flags/13800。
+- **run-49545 验证**：triage 15 分钟覆盖 50 题、20:06 提前结束；37 解/47 flags/13800。
   但 `flags>=2` 不是完成：截图 2/6、3/6，剩 53 flags；单 flag 题 180s 白等；
   tch3-05 71 分钟是 close 失败/状态丢失。v12.3 已按 `flag_total`/`is_completed` 关，
   completed 10s、有 flag 未完成 600s 兜底、close 失败保留/重试、adapter 30s 轮询

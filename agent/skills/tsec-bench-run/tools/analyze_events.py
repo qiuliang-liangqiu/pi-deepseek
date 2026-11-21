@@ -126,4 +126,4 @@ def main(path):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "<run-id>-events.csv")
+    main(sys.argv[1] if len(sys.argv) > 1 else "run-48753-events.csv")

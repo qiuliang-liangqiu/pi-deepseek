@@ -1,0 +1,10 @@
+#!/bin/sh
+basedir=$(dirname "$(echo "$0" | sed -e 's,\\,/,g')")
+node=node
+# A successful exec replaces this shell, so Pi exit codes never run this trap.
+trap 'status=$?
+if [ "$status" -eq 127 ]; then
+  printf "%s\n" "Pi could not find Node.js. Install Node.js 22.19.0 or newer, or rerun the installer at https://pi.dev." >&2
+fi
+exit "$status"' 0
+exec "$node" "$basedir/pi-launcher.js" "$@"

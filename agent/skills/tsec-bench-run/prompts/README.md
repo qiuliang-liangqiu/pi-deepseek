@@ -5,11 +5,11 @@
 
 | 文档里的协议 | 本地真实做法 |
 |---|---|
-| `ACTION shell <cmd>` | 直接 `bash` 工具（`cd <workbench>/2` 后执行） |
+| `ACTION shell <cmd>` | 直接 `bash` 工具（`cd E:/pi/2` 后执行） |
 | `ACTION http GET <url>` | `curl -sS -A '<浏览器UA>' <url>`，别用默认 UA（会吃 403 client blocked） |
 | `ACTION nuclei <url> -t <tpl>` | **不可用**：本机无 nuclei / 无模板库。改 `python -c "from framework import playbooks; ..."` + `docs/PLAYBOOK.md` 手工 payload |
-| `ACTION cve <关键词>` | **不可用**：无 FTS5 CVE 库。改 `grep -n 关键词 <workbench>/2/docs/PLAYBOOK.md` + 读 `framework/payloads.py` |
-| `ACTION intel <摘要>` | 追加写黑板文件 `<workbench>/2/work/bb_<code>.md` 的 `## INTEL` 段 |
+| `ACTION cve <关键词>` | **不可用**：无 FTS5 CVE 库。改 `grep -n 关键词 E:/pi/2/docs/PLAYBOOK.md` + 读 `framework/payloads.py` |
+| `ACTION intel <摘要>` | 追加写黑板文件 `E:/pi/2/work/bb_<code>.md` 的 `## INTEL` 段 |
 | `ACTION need_recon <需求>` | 追加写黑板 `## NEED_RECON` 段，然后**退出**，由主控补派侦察 |
 | `ACTION submit <flag>` | `python -m framework.cli submit <code> <flag>` |
 | （文档没写）拿地址 | `python -m framework.cli run <code>` |
@@ -28,7 +28,7 @@
 双工模式下 Recon 跑完就 close 会把容器从 Exploit 手里收走。所以 Recon 只用**不带 close 的等价调用**：
 
 ```bash
-cd <workbench>/2 && python -c "
+cd E:/pi/2 && python -c "
 from framework import playbooks, recon
 t = playbooks.Target('HOST', PORT)
 print('fp:', recon.fingerprint('HOST', PORT).get('families'))

@@ -87,6 +87,9 @@ def source_files(repo: Path) -> dict[str, Path]:
                 continue
             if name.startswith((".prompt-", ".DS_Store")):
                 continue
+            rel_parts = f.relative_to(src).parts
+            if any(part.startswith("parked") for part in rel_parts):
+                continue
             out[f.relative_to(src).as_posix()] = f
     return out
 

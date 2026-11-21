@@ -23,7 +23,9 @@ turns the gate result into a tool block for:
     `run_gate.py approve --action close --code <c>`.
 
 A 0-flag box is still closable by the normal stall/tier rules. `RUN_GATE=off`
-or `run_gate.py disarm` is the human escape hatch.
+or a TTY approval (`run_gate.py approve --action disarm` then `run_gate.py
+disarm`) is the human escape hatch. The extension blocks `disarm`, `approve`,
+`team_panic`, and `framework.cli panic` from the model's tool path.
 
 ## Commands
 
