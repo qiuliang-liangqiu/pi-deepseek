@@ -247,12 +247,11 @@ def fetch_manifest(timeout: float = 6.0) -> tuple[dict | None, str, str]:
 
 
 def sha_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
+    # Line endings are not content: hash CRLF-normalised bytes so a Windows
+    # checkout, a Linux clone and a copied install all agree (otherwise every
+    # other machine would report content_diff for the whole tree).
+    data = path.read_bytes().replace(bytes((13, 10)), bytes((10,)))
+    return hashlib.sha256(data).hexdigest()
 
 def content_diff(agent: Path, manifest: dict) -> tuple[list[str], list[str]]:
     changed: list[str] = []

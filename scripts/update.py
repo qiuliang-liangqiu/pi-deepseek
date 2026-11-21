@@ -53,12 +53,11 @@ PROTECTED = {"auth.json", "settings.json", "mcp.json", "models.json", "models-st
 
 
 def sha(p: Path) -> str:
-    h = hashlib.sha256()
-    with p.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
+    # Line endings are not content: hash CRLF-normalised bytes so a Windows
+    # checkout, a Linux clone and a copied install all agree (otherwise every
+    # other machine would report content_diff for the whole tree).
+    data = p.read_bytes().replace(bytes((13, 10)), bytes((10,)))
+    return hashlib.sha256(data).hexdigest()
 
 def repo_commit(repo: Path) -> str:
     try:
