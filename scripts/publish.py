@@ -44,11 +44,9 @@ SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 
 
 def sha(p: Path) -> str:
-    h = hashlib.sha256()
-    with p.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    # 行尾不是内容：和 update.py / 清单保持一致，按 LF 归一化后再哈希
+    data = p.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
 
 
 def skip(rel: str) -> bool:
@@ -165,8 +163,7 @@ def main() -> int:
         if f.is_file()
         and not skip(f.relative_to(repo_agent).as_posix())
         and f.relative_to(repo_agent).as_posix() not in local
-        and f.relative_to(repo_agent).as_posix() != "VERSION"
-        and f.relative_to(repo_agent).as_posix() != "README.md"
+        and f.relative_to(repo_agent).as_posix() not in ("VERSION", "README.md", ".workbench.json")
     )
 
     cur = read_version(repo_agent / "VERSION") or read_version(agent / "VERSION") or "0.0.0"
