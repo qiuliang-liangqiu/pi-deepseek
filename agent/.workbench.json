@@ -1,12 +1,12 @@
 {
   "schema": "workbench/1",
-  "commit": "2617899",
-  "version": "1.0.5",
+  "commit": "dc3da14",
+  "version": "1.0.6",
   "repo": "<repo>",
-  "installed_at": "2026-11-21T16:52:18",
+  "installed_at": "2026-11-21T16:53:32",
   "files": {
-    "AGENTS.md": "304b0a63ed7190d3e52b04adf5542287a22b628ecb30e9de44a23eca6b7da92e",
-    "VERSION": "8c54bfab7f1ae9bd1a7148eae41e7b0a8f4ad3726e0cac70f823a2d45db9e60c",
+    "AGENTS.md": "762f820d416aa3a98eb401eafdf504e34e41af9e5ce95dba8bccdfa59fbc99e2",
+    "VERSION": "51c18dc8694861beb47a67894e61044864214435389f6d3a274704d9566ff96c",
     "agents/exploit.md": "7c9a58556a91bb3a1fe8289555b333fb044cc441b2cdc1e07ae00ab3f41b25f9",
     "agents/planner.md": "d9f97d6812dbfa9a8c2d11ee5d988cb9af33fe2c06d548dc3d2ad92bbbb4fb66",
     "agents/recon.md": "d6bdca07ecc64ef016a62491d3aa571d8dcc58d606a430d3386178925cb44062",

@@ -234,6 +234,19 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
 - 行为准则见 skill 内的 `DOCTRINE.md`（四步推演、Recon/Exploit 双工、连续 2 次失败必换链、回显只留关键事实）。
 - **分配比速度重要**（`DOCTRINE.md` §9，2026-11-16/18 实测）：手不慢——成功 stint 中位 5.3/4.1 min，但失败 stint 会吃掉 2/3 时间。四条默认为：① 12–15 分钟无新原语 → 三行笔记 + 关箱；② 不在打的箱不空挂（并发槽只给后台任务）；③ 重开前先读笔记写“这次的不同点”；④ **解出后按 `is_completed`/`flag_total` 找剩余 flag**：单 flag 10 秒关，多 flag 继续到完成；不要固定“2 flags/3–5 分钟”；最后 45 分钟不开新侦察。（**仅多题短周期**；单题深链不套用；闸门按“无新原语”不按总时长。）每轮跑完用 `skills/tsec-bench-run/tools/analyze_events.py run-*-events.csv` 量化复盘；现在它会同时报 unique 解、flags、总分，重开分母按“首开/额外开箱”分开。
 
+## 缺工具时怎么做（tool-check）
+
+`extensions/tool-check` 在会话启动时跑一次 `bin/tools_check.py check --json`（本地、无网络）：
+footer 出现 `tools !N` 就是缺工具，同一份清单 24h 只提示一次；`/tools-check` 可手动复检。
+
+- **只提示，不安装**。要装的时候必须先问用户/等用户同意，再跑仓库里的
+  `python <repo>/scripts/setup-tools.py`：它会列目标（Windows 本机 / WSL-Ubuntu / WSL-Kali /
+  Docker / 自带 QEMU / 已有 VMware），选一个后先打印「工具 → 包名 → 版本 → 是否可用」计划，
+  确认了才落盘。`--list` 只列不装，`--dry-run` 只打印命令。
+- 提示里的 `gdb` / `patchelf` 在 Windows 上算 `needs_alt`（用 WSL/VM/Docker），不是缺包，别反复重试。
+- 禁止用 `curl | sh` 或 releases 二进制补工具；只走包管理器。
+- 关掉自动检查：`PI_TOOL_CHECK=off`；缓存时长 `PI_TOOL_CHECK_TTL`（毫秒，默认 24h）。
+
 ## CTFY / tpctf engagement（VPN）题
 
 题目地址形如 `xxx.internal`、出现 `.conf` / `ctfy-callback` / `nodeN.tpctf.ctfy.run` 时，
