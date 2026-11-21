@@ -5,25 +5,25 @@ description: 做 TSec Benchmark / XBOW 风格 CTF 靶场跑分（tsecbench 平�
 
 # TSec 跑分
 
-工具与流程都在 `E:/pi/2`（若换机器/换目录，先确认路径存在）：
+工具与流程都在 `<workbench>/2`（若换机器/换目录，先确认路径存在）：
 
-- 流程与判据：`E:/pi/2/docs/SOP.md`
-- 指纹 → 打法：`E:/pi/2/docs/PLAYBOOK.md`
-- 踩坑复盘：`E:/pi/2/docs/PITFALLS.md`
+- 流程与判据：`<workbench>/2/docs/SOP.md`
+- 指纹 → 打法：`<workbench>/2/docs/PLAYBOOK.md`
+- 踩坑复盘：`<workbench>/2/docs/PITFALLS.md`
 - 作战条令（四步推演 / 双工分工 / 自愈三模式 / 训练与奖励规范）：`skills/tsec-bench-run/DOCTRINE.md`
 - 可直接派发的双工 prompt：`skills/tsec-bench-run/prompts/`（`RECON_SUBAGENT.md`、`EXPLOIT_SUBAGENT.md`、`BLACKBOARD.template.md`，ACTION 协议已映射到真实命令）
 - 每题派几个人：`skills/tsec-bench-run/prompts/DISPATCH.md`（单人 vs 双工决策表 + 升级/降级触发 + 主控 runbook）
-- **同平台指纹→打法总表（先查这个，再动手）**：`E:/pi/2/docs/CASELIB/runs/2026-11-14-tsecbench63.md`
+- **同平台指纹→打法总表（先查这个，再动手）**：`<workbench>/2/docs/CASELIB/runs/2026-11-14-tsecbench63.md`
   —— 63 题实测：57 通关，逐题给“指纹 + 一句话打法” + 产品/CVE 对照 + 已确认的坏题名单。
-- 工具箱：`E:/pi/2/framework/`（`python -m framework.cli status|next|scan|auto|run|submit|close|panic`；
+- 工具箱：`<workbench>/2/framework/`（`python -m framework.cli status|next|scan|auto|run|submit|close|panic`；
   纪律命令：`preflight|skip|unskip|check-skip|skips|touch|hold|unhold|watch`）；
-  单发小工具在 `E:/pi/2/framework/tools/`（`t.py` 平台 helper、`oracle.py` 文件存在性 oracle、
+  单发小工具在 `<workbench>/2/framework/tools/`（`t.py` 平台 helper、`oracle.py` 文件存在性 oracle、
   `a14p5.py` 字段名爆破、`a16f2.py` 双段路由 fuzz、`fcgi.py` PHP-FPM RCE）
 - CTFY / `.internal` / WireGuard / `ctfy-callback` 题型：见 `skills/ctfy-engagement-pwn/SKILL.md`（wireproxy、平台 503/僵尸实例、checker+font pipeline 链式反推）
 
 ## 硬规则（每次都要执行）
 
-1. **先过 VPN 健康检查**：`python -m framework.cli preflight` 必须 `status=ok` 且 `TSEC_TOKEN` 已设置（等价 `curl http://10.0.100.58`）；
+1. **先过 VPN 健康检查**：`python -m framework.cli preflight` 必须 `status=ok` 且 `TSEC_TOKEN` 已设置（等价 `curl http://<vpn-health-host>`）；
    不通/缺 token 立刻停，不要用平台域名代替判断。`preflight` 退出码 1 = 不通过。
 2. token 缺失或 `task_not_found` → 停止并报告，不要重试。
 3. 同时最多**平台允许的最大容器数**（默认 3；409 文案 `(N)` 自动学习并写 `work/capacity.json`，`TSEC_MAX_ACTIVE` 可覆盖）：`start` 后必须 `close`；收到 409 `max active` 先关最老的一个再重试。
@@ -68,14 +68,14 @@ description: 做 TSec Benchmark / XBOW 风格 CTF 靶场跑分（tsecbench 平�
       多 worker 时每箱都有主人，不算空挂；`hold` 只用于“有可复现原语 + 明确下一招 + 等后台产物”；
     - **重开必须有新招**：先读三行笔记，写下“这次的不同点”，否则不重开（本轮 61% 开箱是重开）；
     - **已完成题不重开**：只有 `is_completed: true` 或 `flags >= flag_total` → 不 start；
-      **不是 2 flags**；v12.3 工具会拒。run-49340 的 Saltern 已拿 2 flags 后又重开 3 次，
+      **不是 2 flags**；v12.3 工具会拒。<run-id> 的 Saltern 已拿 2 flags 后又重开 3 次，
       烧 88 分钟、0 分；2/6、3/6 都应继续到 flag_total；
     - **闸门按原语不按总时长**：15 分钟无新事实 → 笔记 + `close`。**不要按“总时长 15min”砍**
       —— 本轮 6 个成功 stint 超 15 分钟（Atlas 59min/+1000、EchoDeck 40min/+800），照时长砍要丢 3600 分；
     - **收尾冻结的是“摸黑开箱”**：最后 45 分钟只开“已知便宜 / 有笔记下一招”的题，不开新侦察；
     - **解出后按 `is_completed`/`flag_total` 找剩余 flag，不要固定 2/180s**：
       单 flag 题 `is_completed=true` → 10 秒内关；多 flag 题（截图 2/6、3/6）继续到
-      `is_completed` 或 `flag_total`，不要 `flags>=2` 就关。2026-11-18 run-49545：
+      `is_completed` 或 `flag_total`，不要 `flags>=2` 就关。2026-11-18 <run-id>：
       47 flags/37 解，剩 53 flags；单 flag 题白等 180s，tch3-05 得分后 71 分钟才关。
     - **close 失败不删本地 owned**：非 404 失败保留并退避重试；否则平台箱子还在，
       enforcer 不再重试，出现“做完很久不关”（tch3-05 71min）。adapter 轮询平台
@@ -117,10 +117,10 @@ description: 做 TSec Benchmark / XBOW 风格 CTF 靶场跑分（tsecbench 平�
 
 `subagent` 的 parallel 模式是 **Promise.all 语义**：一批三路必须等最慢的返回，期间空闲槽位
 无法接新题。实测因此空转 1.5–2 小时（07/40 早已做完，36 拖 34 分钟就把两个槽锁死；08 拖 60–80 分钟）。
-改用 `work/slots.py`（在 E:/pi/2）做真滚动：
+改用 `work/slots.py`（在 <workbench>/2）做真滚动：
 
 ```bash
-python work/slots.py add bctf2026-04 bctf2026-38 --note "easy 优先"
+python work/slots.py add <code> <code> --note "easy 优先"
 python work/slots.py run --slots 3 --poll 15       # 前台守护：谁退出就补谁
 python work/slots.py run --kill-stale             # 15min 无新原语则换人接力
 python work/slots.py status | inspect <code> --kill
@@ -177,7 +177,7 @@ python work/slots.py status | inspect <code> --kill
 
 ## 代码强制的纪律（2026-11-14 起）
 
-这些规则不再只靠提示词，`E:/pi/2/framework/governance.py` + `cli.py` 已落地：
+这些规则不再只靠提示词，`<workbench>/2/framework/governance.py` + `cli.py` 已落地：
 
 | 规则 | 命令 | 行为 |
 |---|---|---|
@@ -194,11 +194,11 @@ python work/slots.py status | inspect <code> --kill
 | 强制关闭 | `watch <code> --close` / `--hard` | `--close` 仅空闲超时；`--hard` 到点无条件（不推荐） |
 
 > 原则：**时间盒是提示，不是铡刀**。默认只警告；宁可多花 2 分钟确认，也不要误杀一道能做出来的题。
-> 单测：`cd E:/pi/2 && python -m unittest discover -s framework/tests -v`（35 例，含停滞闸门/笔记闸门）。
+> 单测：`cd <workbench>/2 && python -m unittest discover -s framework/tests -v`（35 例，含停滞闸门/笔记闸门）。
 
 ## 复盘库（默认开，不需要手工整理）
 
-- `cli close <code>` 会自动把该题记录沉淀进 `E:/pi/2/docs/CASELIB/`：
+- `cli close <code>` 会自动把该题记录沉淀进 `<workbench>/2/docs/CASELIB/`：
   解出 → `<family>/<code>.md`；没解出 → `unsolved/<code>.md`；无记录 → 静默跳过，不阻断 close。
 - 记录来源：`work/bb_<code>.md`（双工黑板）或 `work/<code>/FINDINGS.md`（手工复盘），有哪个用哪个。
 - 归档后黑板文件自动删除（`work/` 不再堆垃圾），原始证据留在 `CASELIB/_raw/`，笔记里的 flag 已脱敏。
@@ -206,7 +206,7 @@ python work/slots.py status | inspect <code> --kill
 - **开新题前先 `read docs/CASELIB/INDEX.md` 查同族战例**，比从零摸索快。
 - **量化复盘**：跑完把平台导出的 `run-*-events.csv` 丢进 `tools/analyze_events.py`，
   对照 DOCTRINE §9 的阈值看四个数（失败 stint 中位 / 重开率 / 未开题数 / 尾声开箱数）。
-  只看总分会把“运气好碰到高分题”当成进步（例：`run-48753-events.csv` → 28 解 12000 分，
+  只看总分会把“运气好碰到高分题”当成进步（例：`<run-id>-events.csv` → 28 解 12000 分，
   但失败 stint 吃掉 2/3 时间、尾声 30 分钟 10 开 0 分）。
 
 ## 提交纪律
@@ -215,7 +215,7 @@ python work/slots.py status | inspect <code> --kill
   本轮两次错提交（05、20）都是“解密链没闭环就交”。
 - 拼接类题先确认分段顺序；单题错提交 ≤2 次，之后换思路。
 - 已确认的部署缺陷（题面/镜像不符、RCE 后镜像内无 flag、只读根文件系统且缺 web.xml）→ 当场 close，
-  不要反复重试（详见 `E:/pi/2/docs/PITFALLS.md` 第 25 条）。
+  不要反复重试（详见 `<workbench>/2/docs/PITFALLS.md` 第 25 条）。
 
 ## 环境类失败要 30 秒内判死
 

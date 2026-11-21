@@ -61,10 +61,10 @@ const TRUSTED_ROOTS = [
 	path.join(os.homedir(), ".pi", "agent", "knowledge"),
 	path.join(os.homedir(), ".pi", "agent", "prompts"),
 	path.join(os.homedir(), ".pi", "agent", "AGENTS.md"),
-	path.resolve("E:/pi/2/framework"),
-	path.resolve("E:/pi/2/docs"),
-	path.resolve("E:/pi/ctfy"),
-	path.resolve("E:/pi/自检代码"),
+	path.resolve("<workbench>/2/framework"),
+	path.resolve("<workbench>/2/docs"),
+	path.resolve("<workbench>/ctfy"),
+	path.resolve("<workbench>/自检代码"),
 ];
 
 function isTrustedRead(event: { toolName?: string; input?: any }): boolean {

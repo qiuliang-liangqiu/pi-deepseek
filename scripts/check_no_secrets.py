@@ -37,9 +37,12 @@ PRIVATE_IP_ALLOW = re.compile(
 )
 # 第三方 skill 快照（ctf-skills）里的私有地址都是文档示例，不做平台泄漏判定
 EXEMPT_PREFIXES = ("agent/skills/ctf/",)
-
+# 同一快照里的 flag 都是公开 writeup 的答案（pwnable.tw 等），不是本平台泄漏
+FLAG_EXEMPT_PREFIXES = ("agent/skills/ctf/",)
 FLAG_RE = re.compile(r"(?i)\bflag\{([^}\r\n]{3,200})\}")
-FLAG_ALLOW = {"REDACTED", "...", "word1.word2.word3"}
+FLAG_ALLOW = {"REDACTED", "...", "word1.word2.word3",
+              # 占位符与自测夹具
+              "uuid", "deadbeef", "feedface"}
 
 
 def iter_files() -> list[Path]:
@@ -63,6 +66,8 @@ def check_text(path: Path, text: str) -> list[str]:
                 findings.append(f"{rel}:{i}: {name}")
         for m in FLAG_RE.finditer(line):
             inner = m.group(1)
+            if rel.startswith(FLAG_EXEMPT_PREFIXES):
+                continue
             if inner in FLAG_ALLOW or inner.startswith("<"):
                 continue
             findings.append(f"{rel}:{i}: flag literal {m.group(0)[:60]}")

@@ -1,8 +1,8 @@
 """Resolve A records via DNS-over-TCP to the tunnel resolver (through SOCKS)."""
-import struct, socket, sys
+import os, struct, socket, sys
 from socks import connect
 
-def q(name, server="172.16.255.3", port=53, timeout=6):
+def q(name, server=os.environ.get("CTFY_DNS_SERVER", "<dns-server>"), port=53, timeout=6):
     tid = 0x1234
     hdr = struct.pack(">HHHHHH", tid, 0x0100, 1, 0, 0, 0)
     qn = b"".join(bytes([len(p)])+p.encode() for p in name.split(".")) + b"\x00"
