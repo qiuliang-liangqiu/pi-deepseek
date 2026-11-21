@@ -50,7 +50,69 @@ NOTE_STALL_RE = re.compile(r"(无新原语|没有新原语|no\s+new\s+primitive|
 
 # 多会话共用 teams/ 时的隔离：箱子由开启它的会话拥有（teams/<code>/.owner），
 # 只把关自己的箱子；没有 .owner（旧箱）或无从得知自己是谁时，行为与以前完全一致。
-SESSION_ID = (os.environ.get("RUN_GATE_SESSION") or os.environ.get("PI_SESSION_ID") or "").strip()
+def _ppid_of(pid: int) -> int:
+    """Parent pid for process `pid` (Windows). Shims/aliases add a layer, so the
+    caller walks up a few ancestors instead of trusting os.getppid() alone."""
+    if os.name != "nt" or pid <= 4:
+        return 0
+    try:
+        import ctypes
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        ntdll = ctypes.WinDLL("ntdll")
+        h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return 0
+
+        class _PBI(ctypes.Structure):
+            _fields_ = [
+                ("ExitStatus", ctypes.c_long),
+                ("PebBaseAddress", ctypes.c_void_p),
+                ("AffinityMask", ctypes.c_void_p),
+                ("BasePriority", ctypes.c_long),
+                ("UniqueProcessId", ctypes.c_void_p),
+                ("InheritedFromUniqueProcessId", ctypes.c_void_p),
+            ]
+
+        pbi = _PBI()
+        need = ctypes.c_ulong(0)
+        try:
+            rc = ntdll.NtQueryInformationProcess(
+                h, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), ctypes.byref(need))
+            return int(pbi.InheritedFromUniqueProcessId or 0) if rc == 0 else 0
+        finally:
+            k32.CloseHandle(h)
+    except Exception:
+        return 0
+
+
+def session_from_parent() -> str:
+    """Resolve this session when the caller cannot pass --session.
+
+    extensions/run-gate writes teams/.pi-pids/<pi pid> = <session id> at
+    session_start; this script (a child of that same pi process) walks its own
+    ancestry to find the entry, which also survives python shims/aliases.
+    Entries expire after 12h, so a recycled pid cannot inherit an old owner.
+    """
+    d = TEAMS / ".pi-pids"
+    pid = os.getppid()
+    for _ in range(4):
+        if pid <= 4:
+            break
+        f = d / str(pid)
+        try:
+            if time.time() - f.stat().st_mtime <= 12 * 3600:
+                sid = f.read_text(encoding="utf-8").strip()
+                if sid and sid != "unknown":
+                    return sid
+        except OSError:
+            pass
+        pid = _ppid_of(pid)
+    return ""
+
+
+SESSION_ID = (os.environ.get("RUN_GATE_SESSION") or os.environ.get("PI_SESSION_ID")
+              or session_from_parent()).strip()
 
 
 def box_owner(tdir: Path) -> str:

@@ -138,6 +138,18 @@ export default function runGate(pi: ExtensionAPI) {
 		} catch {
 			// 拿不到就保持空：不限定会话，宁可多拦也不误放
 		}
+		// Fallback for callers that cannot pass --session (old extension code in a
+		// long-running session): map this pi process pid -> session id, so
+		// bin/run_gate.py can resolve it from os.getppid().
+		if (!SESSION_ID) return;
+		try {
+			const dir = path.join(ROOT, "teams", ".pi-pids");
+			fs.mkdirSync(dir, { recursive: true });
+			fs.writeFileSync(path.join(dir, String(process.pid)), SESSION_ID + "
+", "utf8");
+		} catch {
+			// best effort
+		}
 	});
 
 	pi.on("before_agent_start", async () => {
