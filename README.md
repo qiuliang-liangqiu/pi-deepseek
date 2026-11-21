@@ -1,9 +1,34 @@
 # pi-agent workbench
 
-一个跑在 [pi](https://pi.dev) 上的 CTF / 靶场智能体工作台：把「止损纪律」写成可执行代码，
-把每次跑分的经验沉淀成 skill、playbook 和复盘。
+跑在 [pi](https://pi.dev) 上的 CTF / 靶场智能体工作台：把「止损纪律」写成可执行代码，
+把每次跑分的经验沉淀成 skill、playbook 与复盘模板。
 
-**Windows / Linux / macOS 都能装**，一行命令；装过之后再跑同一条命令就是增量更新：
+---
+
+## 介绍
+
+这套东西解决的问题很具体：**让 agent 在有限时间里稳定地少犯错**，而不是让模型显得更聪明。
+
+- **规则层 `agent/`** — 直接装进 `~/.pi/agent`。`AGENTS.md` 是总规则（止损闸门与速率纪律、
+  跑分流程、engagement 打法、prompt-injection 防护、路径对照），配套 9 个启用扩展
+  （`loop-guard` / `read-guard` / `prompt-injection-guard` / `run-gate` / `platform-guard` /
+  `team-pool` / `triage-guard` / `subagent` / `update-check`，另有 1 个未启用的草稿）、
+  10 个命令行脚本、23 个 skill 目录、7 个子代理。**这一层不依赖其它目录，可以独立运行。**
+- **工具层 `toolbox/`** — 跑分 CLI（`framework.cli`，28 个子命令：平台 API、指纹→打法族、
+  竞态编排、SKIP/时间盒看门狗、滚动调度）+ `SOP / PLAYBOOK / PITFALLS` 三份文档。
+  用 `PI_WORKBENCH` 指过去即可，不必拷进 `~/.pi/agent`。
+- **复盘层 `reports/`** — 复盘的结构模板与脱敏规则（示例，不含真实战绩）。
+- **评测层 `eval/`** — 改完 skill 后怎么回归：行为镜像（8 探针 / 19 检查）+ 14 条 skill 路由用例。
+- **脚本层 `scripts/`** — 一行安装、前置检查、增量更新、工具安装、脱敏检查。
+
+仓库**只放方法论与工具**：镜像、会话日志、`teams/`、`sessions/`、比赛附件、真实 flag、
+平台 token 与具体比赛复盘都不在这里。
+
+---
+
+## 安装步骤
+
+### 最快的方式：一行命令（Windows / Linux / macOS）
 
 ```powershell
 # Windows
@@ -14,473 +39,166 @@ powershell -c "irm https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@
 curl -fsSL https://cdn.jsdelivr.net/gh/qiuliang-liangqiu/pi-deepseek-v1@main/scripts/install.sh | bash
 ```
 
-| 支持的目标 | 安装通道 | 说明 |
-|---|---|---|
-| Windows 本机 | winget + pip/gem/go 兜底 | gdb/patchelf 等没有 Windows 包，会标 `不可用` |
-| Ubuntu / Kali / Debian | apt（本机、WSL、或 VMware 虚拟机走 SSH） | 最全；Kali 可用 `--kali-meta` 一次到位 |
-| macOS | brew + pip/gem/go | 部分 Linux 专属工具标 `不可用` |
+装过一次之后再跑同一条命令 = 增量更新（会先备份旧配置）。
 
-仓库**只包含方法论与工具**：镜像、会话日志、靶场数据、flag、平台凭据和具体比赛复盘都不在这里。
-
-```
-agent/      运行时配置（直接放进 ~/.pi/agent）
-toolbox/    跑分命令行 framework + SOP/PLAYBOOK/PITFALLS
-docs/       API 配置、为什么用 DeepSeek、工具对照表
-reports/    复盘怎么写（模板 + 脱敏规则；真实复盘不入库）
-eval/       行为镜像（mirror）+ skill 路由评测
-projects/   其他落地项目
-scripts/    一行安装 / 前置检查 / 工具安装 / 增量更新 / 交接打包
-```
-
-## 为什么这样拆
-
-| 层 | 解决什么 | 代码/文档 |
-|---|---|---|
-| **规则层** `agent/` | 把「14 分钟无新原语就停」「≤20 req/s」「triage 30 分钟」从提示词变成 hook 和脚本 | 7 个扩展目录（6 个启用）、5 个 bin 脚本、8 个自研 skill |
-| **工具层** `toolbox/` | 平台 API、指纹→打法、竞态编排、SKIP/时间盒看门狗、滚动调度 | `framework/` 10 个模块 + 单测 |
-| **复盘层** `reports/` | 复盘的结构与脱敏规则（示例，不含真实战绩） | 模板 + 规则 |
-| **评测层** `eval/` | 改完 skill 后怎么回归：行为镜像 8 探针/19 检查、14 条路由用例 | `score.mjs` + `route_eval.py` |
-
-## 我要下哪些
-
-**整仓只有 5.7 MB / 340 个文件**，全下最省事。但按目的可以只取一部分：
-
-| 目的 | 需要 | 怎么装 |
-|---|---|---|
-| 让 pi 有纪律 / 防护 / 多 Agent（不跑分） | `agent/`（258 文件，4.5 MB） | `bash scripts/bootstrap.sh --minimal` |
-| **跑分 / CTF 全流程（推荐）** | 全部（5.7 MB） | `bash scripts/bootstrap.sh` |
-| 只想读方法论，不装 | `README.md`、`toolbox/docs/{SOP,PLAYBOOK,PITFALLS}.md`、`reports/` | 直接看，不用 clone |
-| 要改代码 / 提 PR | 全部 + `eval/` | 见根 `AGENTS.md` |
-
-三个目录的分工：
-
-- **`agent/`** — 装进 `~/.pi/agent/`，是**唯一必须**的部分。里面是 AGENTS.md、6 个启用扩展
-  （`parked-ctfy/` 是未启用的草稿）、5 个 bin 脚本、23 个 skill 目录（共 33 个可加载 skill）、
-  7 个子代理。**它不 import toolbox，可以完全独立运行**。
-- **`toolbox/`** — 跑分 CLI（`framework.cli`）+ 三份文档。用 `PI_WORKBENCH` 指过去即可，
-  不需要拷进 `~/.pi/agent`。`--minimal` 装法下 `$PI_WORKBENCH` 未设置，skill 里提到
-  toolbox 的命令会失效，但规则/防护/多 Agent 全都能用。
-- **`scripts/`** — bootstrap / install / doctor / 脱敏检查。只跑 install 的话
-  记得它还要求 `agent/AGENTS.md` 存在（现在有了）。
-
-不想整仓 clone 的最小操作：
-
-```bash
-git clone --depth 1 https://github.com/qiuliang-liangqiu/pi-deepseek-v1.git
-cd pi-deepseek-v1 && bash scripts/bootstrap.sh --minimal
-```
-
-> 仓库里**没有**：镜像、会话日志、`teams/`、`sessions/`、比赛附件、任何真实 flag 或 token，也没有具体比赛的战绩。
-
-## 快速开始（手动版）
-
-> 不想 clone？往上翻「最快的方式」那两行。下面是想自己控制每一步时用的。
-
-### 1. 装前置（python / node / pi）
-
-```bash
-python scripts/prereq.py            # 体检：python>=3.10、node>=18、npm、pi、磁盘 8GB、网络
-python scripts/prereq.py --install  # 缺什么装什么（winget / apt / brew，会先问）
-```
-
-按 [pi.dev](https://pi.dev) 的说明安装 pi（本仓库基于 1.5.2 调试），或让上面这条命令代装。
-**python 需要 ≥ 3.10**（脚本用了 `X | None` 注解）；低于它 `prereq.py` 会直接告诉你升哪个。
-
-### 2. 一条命令装好
+### 想自己控制每一步
 
 ```bash
 git clone https://github.com/qiuliang-liangqiu/pi-deepseek-v1.git
 cd pi-deepseek-v1
 
-bash scripts/bootstrap.sh --api      # 一条命令：装配置 + 配 API key + 端到端验证
-# Windows:
-powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -Api   # -Api 会把 key 也配好
+python scripts/prereq.py            # 体检：python>=3.10、node>=18、npm、pi、磁盘、网络
+python scripts/prereq.py --install  # 缺什么装什么（会先问）
+
+bash scripts/bootstrap.sh --api     # 装配置 + 配模型 key + 端到端验证
+bash scripts/bootstrap.sh --api --tools   # 连 10 个常用工具一起（会先问）
+
+python scripts/doctor.py            # 装完体检（--json 给机器读，--strict 有 warning 就 exit 1）
 ```
 
-`--api` 装完会问你要 key（输入不回显），写 `auth.json` + 默认模型，并跑一次
-`pi -p "reply pong"` 确认真能出 token。非交互用 `--api --key-file ~/k.txt`。
+Windows 用 `powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -Api`，参数一一对应。
 
-**工具不会自动装**（装软件必须经过你同意）。想要一条命令连工具一起：
+`bootstrap` 是幂等的，做六件事：检查前置 → 备份现有配置 →
+把 `agent/` 装进 `~/.pi/agent` → 只在缺失时复制 `settings.json` 示例 →
+写 `workbench.env`（`PI_WORKBENCH`）→ 冒烟（`scan_injection` / `triage_gate` /
+`framework.cli` / 脱敏检查 / 行为镜像）。**绝不覆盖** `auth.json` / `settings.json` / `mcp.json`。
+
+常用开关：`--dry-run`、`--yes`、`--minimal`（只装规则层，不接 toolbox）、`--api`、`--tools`。
+
+### 装完要填的东西
 
 ```bash
-bash scripts/bootstrap.sh --api --tools          # 问过你之后装 10 个常用工具
-bash scripts/bootstrap.sh --tools-all --yes      # 全装 32 个（Linux 需加 --allow-sudo）
+pi auth login deepseek --api-key        # 写进 ~/.pi/agent/auth.json
+pi auth check --provider deepseek --json  # {"status":"ready",...}
 ```
-不想这次就配 API 就省略 `--api`，先用 `bash scripts/bootstrap.sh` 装配置。
 
-克隆不下来就换协议（HTTPS 和 SSH 谁通不一定）：
+跑分平台地址**没有默认值**，必须自己给：
 
 ```bash
-git clone git@github.com:qiuliang-liangqiu/pi-deepseek-v1.git
-```
-
-它会依次做六件事，全程幂等（重跑会先把旧配置备份到 `~/.pi/agent/backups/<时间戳>-install/`）：
-
-| 步骤 | 内容 |
-|---|---|
-| 1 | 检查 python ≥3.8 / node / pi / git，缺 `pi` 会打印安装命令但继续 |
-| 2 | 备份现有 `~/.pi/agent/{AGENTS.md,agents,bin,extensions,prompts,skills,knowledge}` |
-| 3 | 把 `agent/` 装进 `~/.pi/agent/`，并 `chmod +x bin/*` |
-| 4 | 没有 `settings.json` 才从示例复制；**绝不覆盖** `auth.json` / `settings.json` / `mcp.json` |
-| 5 | 写 `~/.pi/agent/workbench.env`（`PI_WORKBENCH=...`），询问是否加进 shell rc；PowerShell 走 profile 里的 `Get-Content ... \| Invoke-Expression`（PS 5.1 不能点源非 `.ps1` 文件） |
-| 6 | 冒烟：`scan_injection` / `triage_gate` / `framework.cli` / 脱敏检查 / `eval/mirror verify` |
-
-常用开关：`--dry-run`（只打印）、`--no-smoke`、`--yes`（不交互）、`--minimal`（只装 agent 层，不接线 toolbox）。
-装完体检：
-
-```bash
-python scripts/doctor.py          # 环境表格；--json 给机器读，--strict 有 warning 就 exit 1
-```
-
-### 3. 填两样东西
-
-**模型**：一条命令就行，细节见 [`docs/API-CONFIG.md`](docs/API-CONFIG.md)。
-
-```bash
-pi auth login deepseek --api-key     # 交互粘贴 key，写进 ~/.pi/agent/auth.json
-pi auth check --provider deepseek --json   # {"status":"ready",...}
-# 或者：export DEEPSEEK_API_KEY=sk-...
-# 或者（会把 key 从文件读、顺带写默认模型）：bash scripts/set-api.sh --key-file ~/k.txt
-```
-
-**工具箱路径**（bootstrap 已写进 workbench.env，手动装的话）：
-export PI_WORKBENCH="$PWD/toolbox"
-
-# 跑分平台地址没有默认值，必须自己给：
 export TSEC_BASE_URL=https://<your-platform-host>
 export TSEC_TOKEN=<platform-token>
 ```
 
-重启 pi 后 `/reload` 让扩展生效。想手工装也行：`scripts/install.sh`（只复制配置，不检查依赖）。
+重启 pi 或 `/reload` 让扩展生效。只想读方法论、不装也行：看 `toolbox/docs/` 与 `reports/`。
 
-## 规则层：纪律是怎么变成代码的
-
-`agent/AGENTS.md` 是总规则（250 行），核心是六节：
-read-vs-cat、**止损闸门与速率纪律**、跑分流程、CTFY engagement、prompt-injection 防护、镜像/本地路径对照。
-
-配套的 6 个扩展（`agent/extensions/`，另有未启用的 `parked-ctfy/` 草稿）：
-
-| 扩展 | 作用 | 开关 |
-|---|---|---|
-| `loop-guard` | 同一条 bash 反复执行时在结果里插入干预 | `LOOP_GUARD=warn\|block\|off`，`LOOP_GUARD_WINDOW/WARN/BLOCK` |
-| `read-guard` | 拦截裸 `cat 单文件`，给出可复制的 `read(...)` | `READ_GUARD=warn\|block\|off`，`READ_GUARD_MIN_BYTES` |
-| `prompt-injection-guard` | 扫描所有 `tool_result`，high≥1 或 medium≥2 时加警告块；只警告不改写 | `policy.ts` 里的规则表 |
-| `team-pool` | 注册 `team_dispatch/poll/cancel/adopt/enforce/hold/unhold/panic`，start 后自动 adopt | `TEAM_JOB_TIMEOUT`、`TBENCH_TRIAGE`、`TBENCH_STALL_CLOSE_S` |
-| `triage-guard` | triage 未完成时拦 `submit_flag` 和 raw submit | `~/.pi/agent/triage_state.json` |
-| `subagent` | single/parallel/chain，每个子代理独立 pi 进程（改自 pi 上游示例） | — |
-
-5 个命令行脚本（`agent/bin/`）：
+### 更新
 
 ```bash
-python agent/bin/team_pool.py {dispatch|poll|cancel|adopt|start|close|clock|hold|unhold|panic|enforce}
-python agent/bin/stall_gate.py {open|beat|check|show} <dir>
-python agent/bin/triage_gate.py {start|beat|check|done|status}
-python agent/bin/scan_injection.py <path> [--strings-only] [--stdin]
-bash agent/bin/triage.sh <host:port> [outfile]
+bash scripts/bootstrap.sh --update     # 增量：只动配置层，先备份
+bash scripts/update.sh --dry-run       # 只看会改什么
+bash scripts/update.sh --keep-local    # 你自己改过的文件保留你的版本
 ```
 
-8 个自研 skill（`agent/skills/`）：`tsec-bench-run`、`team`、`portfolio`、`tsec-bench`、`ctf-kb`、
-`prompt-injection-guard`、`ctfy-engagement-pwn`、`toolkit`，以及上面的镜像路径对照。
-`tsec-bench-run/DOCTRINE.md` 是四步推演和 Recon/Exploit 双工的完整版。
-第三方/移植的 skill 见 `agent/skills/PROVENANCE.md`。
+pi 里还有 `/wb-check`（强制查新版本）、`/wb-update`（先打印计划再更新）；
+版本契约是仓库的 `agent/VERSION`（当前 1.0.1），不会自动升级。
 
-## 工具层：framework
+---
 
-```bash
-cd toolbox
-export TSEC_TOKEN=<platform-token>
-export TSEC_BASE_URL=https://<your-platform-host>      # 必填，没有默认值
-python -m framework.cli preflight
-python -m framework.cli status
-python -m framework.cli scan 10.0.0.1:80
-python -m framework.cli run <code> --watch
-python -m framework.cli auto <code>
-python -m framework.cli report
-python -m framework.cli panic
-```
+## 它的优势
 
-模块：`api`（平台客户端，409 自动学习并发上限）、`net`（原始报文/并发 map）、`recon`（指纹→打法族）、
-`payloads`、`playbooks`、`race`（多路错峰竞态）、`governance`（SKIP/时间盒/双地址探活/VPN 预检）、
-`caselib`（解题记录→可检索打法库）、`cli`（28 个子命令）。
+**1. 纪律是代码，不是提示词**
+「14 分钟无新原语就停」「≤20 req/s」「triage 30 分钟」这类规则沉在 hook 和脚本里：
+`run-gate` 在没拿到 `is_completed` / `flags == flag_total` 前**拦住 finish 和关箱**，
+`loop-guard` / `read-guard` 拦重复命令与裸 `cat`，`triage-guard` 拦 triage 未完成就提交，
+`platform-guard` 把 flag 提交收敛到一条脚本化通道。规则被绕过 = 代码被改，不是"模型忘了"。
 
-文档：`docs/SOP.md`（P0–P6 流程）、`docs/PLAYBOOK.md`（8 个指纹族的 payload）、
-`docs/PITFALLS.md`（41 条复盘，已去标识化）。
-解题记录用 `cli close` 自动沉淀到 `docs/CASELIB/`（**本地生成，不进仓库**）。
-`work/slots.py` 是滚动调度器（谁完成就补谁，不做整批栅栏），`work/sub.py` 是带硬门的提交器。
+**2. 多 Agent 是一等公民，不是并发包装**
+`team-pool` 按「一箱一队、不跨箱」派发 worker（recon / exploit / verifier），
+job 持久化到 `jobs.json`，worker 结束写 `result-<job>.md` 与候选文件，
+主控不主动 poll 也能在 footer 看到 `team Nr/Md`、`CANDIDATE`、`STALL`、`RECON` 标记；
+看门狗按 completed 10s / 停滞 900s / solved-hold 600s 收箱。
 
-单测：
+**3. 可回归**
+改完 skill 或规则能立刻验：`node eval/mirror/score.mjs verify`（行为快照没漂）、
+`python eval/route/route_eval.py --dry-run`（路由用例）、
+`cd toolbox && python -m unittest discover -s framework/tests`。一次只改一个文件，指标不降再合并。
 
-```bash
-cd toolbox && python -m unittest discover -s framework/tests -v
-```
+**4. 不信任任何输入**
+`prompt-injection-guard` 扫描每个 `tool_result`（命中就加警告块、只警告不改写），
+`scan_injection.py` 可离线扫附件/目录/zip；提交前 `check_no_secrets.py` 确认没有
+flag / token / 内网地址 / 本机绝对路径混进仓库。
 
-## 更新已有安装
+**5. 环境不用你操心**
+`scripts/setup-tools.py` 先打印「工具 → 包名 → 版本 → 是否可用」再装，只走包管理器，
+绝不 `curl | sh`、不从 releases 拉二进制；Windows 上没有的工具可以选 WSL / 已有虚拟机 /
+Docker / 自带 QEMU 虚拟机（`portable-vm.py`，不需要对方装任何虚拟机软件）。
 
-装过之后再拿新版本，不要重跑 `bootstrap.sh` 全量覆盖（会碰你的配置），用增量更新：
+**6. 复盘可量化**
+`ingest_run.py` 只做计数与脱敏（`flag{REDACTED}` / `<ip>` / `<hex>`），
+配合失败 stint 中位、重开率、未开题数、尾声开箱数，能回答"哪条规则真的起作用"。
 
-**同一条 bootstrap 命令就会自动识别**：目录里已有安装 → 走增量更新；没有 → 全新安装。
+---
 
-```bash
-bash scripts/bootstrap.sh              # 自动判断 install / update
-bash scripts/bootstrap.sh --update     # 强制走增量
-bash scripts/bootstrap.sh --reinstall  # 强制整体重装（旧目录先备份）
+## 为什么用的是 DeepSeek
 
-bash scripts/update.sh                # 只更新配置层（会先 git pull）
-bash scripts/update.sh --dry-run      # 只看会改什么
-bash scripts/update.sh --keep-local   # 你改过的文件保留你的版本
-bash scripts/update.sh --no-pull      # 跳过 git pull（用当前 checkout）
-```
+不是"模型榜单"，是这套配置的**结构性需求**：9 路子代理并发 + 1M 上下文 + 显式思考档位。
 
-它靠 `~/.pi/agent/.workbench.json`（安装时写的基线清单，记录每个文件的 sha256）判断：
+| 模型 | 输入 $/M | 输出 $/M | 缓存读 $/M | 上下文 | 最大输出 |
+|---|---|---|---|---|---|
+| `deepseek-flash` | 0.3 | 1.2 | 0.006 | 1M | 384K |
+| `deepseek-v4-pro` | 1.32 | 3.96 | 0.044 | 1M | 384K |
 
-| 状态 | 含义 | 动作 |
-|---|---|---|
-| 新增 | 本地没有 | 直接装 |
-| 更新 | 本地 == 基线（你没改过） | 备份后覆盖 |
-| **冲突** | 本地 ≠ 基线（你改过） | 先存成 `<file>.local-<时间戳>`，再覆盖；`--keep-local` 则跳过 |
-| 无基线 | 旧版本装的，没有清单 | 备份后覆盖（先提示） |
-| 不变 | 内容一致 | 跳过 |
+（数字取自仓库里注册的模型目录，实际以官方价格为准。）
 
-**永远不碰**：`auth.json`、`settings.json`、`mcp.json`、`models*.json`、`toolkit.json`、
-`sessions/`、`teams/`、`backups/`，以及你在这些目录之外自己加的文件。
+1. **缓存读比输入便宜约 50 倍。** 子代理反复读同一份 `AGENTS.md`、同一批 skill、同一份源码，
+   命中缓存后的边际成本接近 0 —— 这正是"多开几个 worker 并行试假设"能成立的前提。
+   换成按输入原价计费的组合，9 路并发很快变成奢侈品。
+2. **1M 上下文 / 384K 单次输出，让"不压缩"成为默认策略。** compaction 会丢掉"已排除"的结论，
+   那不是省钱，是把前面 20 分钟的判断重新买一遍。
+3. **思考档位是按阶段调的。** pi 对 DeepSeek 有专门适配（`thinkingFormat: "deepseek"`、
+   `requiresReasoningContentOnAssistantMessages`、`supportsStrictMode`）：
+   triage 用 `high`、卡住的 hard 题切 `max`、收尾用 `low`；严格模式让工具参数走真正的
+   JSON Schema，少一类"参数名猜错"的失败。
+4. **不被一家锁死。** `api: "openai-completions"` + `baseUrl` 可覆盖：自建网关只改 `baseUrl`，
+   想 A/B 别的模型加一个 provider 就能用同一套 skill/扩展跑对照。
 
-覆盖前会把要改的文件备份到 `~/.pi/agent/backups/<时间戳>-update/`；更新后自动跑一次冒烟，
-失败会打印回滚命令。`--prune` 才会删除上游已移除的文件（默认保留）。
+**什么时候不该用**：网络到不了模型端点且没有可用网关；需要极强的图片理解；
+任务 token 量很小（单次问答），那价格差构不成理由。完整推理与"怎么自己量"见
+[`docs/WHY-DEEPSEEK.md`](docs/WHY-DEEPSEEK.md)。
 
-### 自动检测新版本（装过之后）
-
-版本契约只有一个文件：仓库里的 `agent/VERSION`（semver），安装/更新后落在
-`~/.pi/agent/VERSION`。扩展 `update-check` 在每次会话启动时异步比对远端
-（GitHub API → `raw.githubusercontent.com` → jsDelivr 依次回退），结果缓存 6 小时：
-
-- 有新版本：footer 显示 `wb ↑ <新版本>`，并提示 `/wb-update`（同一版本 24 小时只提示一次）
-- `/wb-check`：忽略缓存强制检查
-- `/wb-update`：先跑 `apply --dry-run` 打印文件计划，确认后才更新（备份 + 本地改动保留 `.local-<时间戳>`）
-- 无 UI / 脚本场景：`python ~/.pi/agent/bin/workbench_update.py check --json`
-  和 `... apply --dry-run` / `... apply --yes`
-
-关闭自动提示：`PI_UPDATE_CHECK=off`；指向别的仓库/镜像：`PI_UPDATE_REPO`、
-`PI_UPDATE_BRANCH`、`PI_UPDATE_URL`、`PI_UPDATE_TTL`（详见
-`agent/extensions/update-check/README.md`）。
-
-**发新版本**：改 `agent/VERSION`（例如 `1.0.0` → `1.0.1`）并 push 即可；
-想让人看得更清楚再加一个 `v1.0.1` tag。别的机器下次启动就会看到提示，
-但**不会自动升级**，要用户点确认。
-
-如果某台机器是配置源头（`~/.pi/agent` 比仓库新），在它的 `~/.pi/agent/.update-hold`
-写一行理由：`apply` 会直接拒绝，避免被仓库旧文件覆盖；确认要更新时删掉该文件，
-或 `apply --ignore-hold`。
-
-## 工具自检与按需安装
-
-CTF 工具缺什么不该靠猜。先选**装到哪个系统**（Windows 本机 / WSL-Ubuntu / WSL-Kali），
-脚本会打印"工具 → 包名 → 是否可用"再执行；三系统对照见 [`docs/TOOLS.md`](docs/TOOLS.md)。
-
-```bash
-python scripts/setup-tools.py                 # 菜单：选目标 → 看映射 → 装
-python scripts/setup-tools.py --list          # 只看映射，不装
-python scripts/setup-tools.py --target vm --yes          # 已开机的 VMware 虚拟机
-python scripts/setup-tools.py --target wsl:Ubuntu --yes  # WSL 发行版
-python scripts/setup-tools.py --install-wsl              # 没装 WSL 时帮你装（要 UAC）
-```
-
-它会**自己发现**能装到哪：
-
-| 目标 | 发现方式 | 安装通道 |
-|---|---|---|
-| Windows 本机 | 总是可用 | `winget` |
-| WSL: Ubuntu / Kali | `wsl.exe -l -q`（UTF-16 解码） | `wsl -d <distro> -u root`，无需 sudo |
-| VMware 虚拟机 | `vmrun list` + 扫 `Documents\Virtual Machines`（自定义目录用 `VM_DIRS`） | `ssh`：先用 `~/.ssh/config` 的密钥；**密钥不通就问密码**（不回显，可 `--ssh-password-file`）；拿不到 IP 会问，或 `--start-vm` 帮你开机 |
-| 本机 Linux | `/etc/os-release` | `apt-get`（需 `--allow-sudo`） |
-| **自带 QEMU 虚拟机** | `scripts/portable-vm.py` 存在时**总是出现** | 里面是 Ubuntu 24.04；不存在就先下镜像（600 MB）再启动 |
-| **自带 QEMU Kali 虚拟机** | `portable-vm.py` 存在时总是出现 | 官方 `kali-linux-*-qemu-amd64.7z`（约 4 GB），解压后直接启动，`kali/kali` 登录 |
-| **Kali（WSL）** | 总是出现；没装时标"需安装" | 选中就执行 `wsl --install -d kali-linux`（一次 UAC） |
-| **Kali（Docker）** | docker 可用时出现 | `kalilinux/kali-rolling` 容器 |
-| **Kali（QEMU 镜像）** | `~/.pi/vm/kali.qcow2` 或 `PI_KALI_IMAGE` 存在时出现 | 用官方 qemu 镜像，默认 `kali/kali` 登录 |
-| Docker 容器 | `docker info` 可用时出现在菜单里 | 容器内 `apt-get`（root，无需 sudo） |
-
-Windows 上 gdb/patchelf/qemu-user 这类**没有 Windows 包**的工具，脚本会弹菜单让你选去处
-（WSL / 已有虚拟机走 SSH / MSYS2 / **Docker 容器** / 跳过）。选了 Docker 之后：
-
-```bash
-bash scripts/dt.sh nmap -sV <host>     # 在容器里跑任意工具
-bash scripts/dt.sh                     # 交互 shell
-bash scripts/dt.sh gdb -q ./chall
-```
-
-容器名 `pi-toolbox`，带 `SYS_PTRACE`/`NET_RAW` 权限，`/work` 是命名卷。pwn 反向回连受容器 NAT
-限制，需要完整网络时仍建议 WSL/VM。
-
-### 虚拟机：装完就能远程调用
-
-```bash
-# 装（会自己发现 VMware 虚拟机，或直接指定）
-python scripts/setup-tools.py --target ubuntu --ssh-host <ip> --ssh-user <user>
-
-# 装完自动写 ~/.pi/agent/vm.env，之后直接跑：
-bash scripts/vt.sh nmap -sV <host>
-bash scripts/vt.sh gdb -q ./chall
-bash scripts/vt.sh              # 交互 shell
-```
-
-虚拟机是三种去处里**最完整**的：ptrace、NET_RAW、pwn 反向回连、宿主 VPN 全部原生可用，
-不需要 Docker 的 cap 参数，也不需要 WSL 的重启。`scripts/vt.sh` 只是把 `ssh` 包了一层，
-目标从 `vm.env` 读（也可用 `PI_VM_HOST/PI_VM_USER` 覆盖）。
-
-底层目录仍是 `scripts/toolkit.py`（32 个工具，8 个类别），只执行包管理器命令，
-绝不 `curl | sh`、不从 releases 下二进制：
-
-```bash
-python scripts/toolkit.py --check                 # ✓ 已装 / · 缺失
-python scripts/toolkit.py --check --json          # 给 agent 读
-python scripts/toolkit.py --install               # 交互：编号 / 类别 / all
-python scripts/toolkit.py --install jq,ffuf       # 指定 id
-python scripts/toolkit.py --install web --dry-run # 只打印命令
-python scripts/toolkit.py --check --with-versions # 缺失的顺带查最新版本
-```
-
-执行前会先打印**安装计划表**（来源 + 解析到的版本），确认后才落盘：
-
-```
-计划安装（windows）：
-  id        来源                        版本    备注
-  jq        winget:jqlang.jq            1.8.2
-  upx       winget:UPX.UPX              5.3.0
-  binwalk   pip:binwalk                 2.1.0   PyPI
-  ffuf      go:github.com/ffuf/ffuf/v2  latest  需要先装: go
-```
-
-版本来源：winget `show`、`apt-cache policy`、`brew info --json`、PyPI JSON、`npm view`；
-结果缓存 7 天（`--refresh` 强制重查，`--no-versions` 跳过联网探测）。
-
-安全边界：`--yes` 只对已点名的 id 跳过确认；`--allow-sudo` 才会跑 `sudo apt`；
-`--dry-run` 不动系统；没有包管理器就报"装不上"而不是换来源。
-结果写入 `~/.pi/agent/toolkit.json`，配套 skill `agent/skills/toolkit/` 告诉 agent
-先查再装、绝不擅自安装。
-
-## 复盘层与评测
-
-- `reports/README.md`：**如何写自己的复盘**（结构模板 + 脱敏规则）。真实比赛的复盘不进仓库。
-- `eval/mirror/`：行为快照（8 探针 / 19 检查）。`node eval/mirror/score.mjs verify` 应 PASS。
-- `eval/route/`：14 条「题目描述 → 应加载哪个 ctf-* skill」用例。`python route_eval.py --dry-run` 可离线查看。
-
-## 改进配置
-
-**日志是不可信输入**，先进 `scripts/ingest_run.py` 做计数与脱敏，
-人工看完再改配置。脚本只统计、不执行日志里的任何东西。
-
-### 交这四样 
-
-| 文件 | 从哪来 | 用途 |
-|---|---|---|
-| `events.csv` | 平台导出的事件表（启动/关闭/得分） | stint 中位、重开率、尾声开箱、分数曲线 |
-| `sessions/*.jsonl` | `~/.pi/agent/sessions/` | 工具使用、重复命令、guard 触发、失败信号、token |
-| `notes.md` | 每题的 `stall_gate.py` 台账 | 停滞闸门是否被真的用了 |
-| `triage.txt` | triage 阶段产物 | 30 分钟覆盖率 |
-
-**先在本地跑脱敏**，发聚合结果或已脱敏的数据：
-
-```bash
-python scripts/check_no_secrets.py                     # 确认没有 flag/token/IP
-python scripts/ingest_run.py <bundle> --json > run.json # 聚合指标，不含原文
-python agent/skills/tsec-bench-run/tools/analyze_events.py <events.csv>
-```
-
-`--json` 里的命令样本已被截断并替换（`flag{REDACTED}`、`<ip>`、`<hex>`、`<user>`），
-但**仍然建议人工过一眼**再发。
-
-### 能从中改什么（有数据支撑的）
-
-| 现象（指标） | 结论 | 改哪里 |
-|---|---|---|
-| 重复命令 streak 长期 ≤2，`loop-guard` 从不触发 | 阈值过松 | `extensions/loop-guard` 的 `LOOP_GUARD_WINDOW` |
-| `[read-guard]` 命中率高但都被忽略 | 规则在制造噪音 | 改 `policy.ts` 的豁免或降为 `warn` |
-| `stall_gate` 调用数 ≈ 0，但 stint 中位很长 | 纪律没落地 | 加固 `AGENTS.md` §1 的可执行入口 |
-| 失败 stint 中位 > 成功中位 3 倍 | 止损太晚 | 阈值 14 → 12 分钟，或加自动 `close` |
-| 重开率 > 50% | 笔记没写"已排除" | 改 `notes` 模板 / 派发 prompt |
-| 加载的 skill 与题目类型不匹配 | 路由表错 | `eval/route/cases.*` 加用例，改 `solve-challenge` |
-
-### 不能从中得到的
-
-- 别人**想过但没执行**的判断（日志只有动作，没有"当时为什么没试"）。
-- 平台没导出的事件（多数平台不给每个箱的完整生命周期）。
-- 他人的主观难度评级——只信 `is_completed`/`flag_total` 这类硬信号。
-
-### 改完必须回归
-
-```bash
-node eval/mirror/score.mjs verify          # 行为快照没漂
-python eval/route/route_eval.py --dry-run  # 路由用例全过
-cd toolbox && python -m unittest discover -s framework/tests
-```
-
-一次只改一个文件，指标不降再合并——否则你分不清是哪条规则起作用。
-
-## 为什么用 DeepSeek
-
-这套配置不是"模型无关"的通用模板：**9 路子代理并发 + 1M 上下文 + 显式思考档位**这三个需求，
-共同决定了模型选择。`deepseek-flash` 的缓存读价格是输入的 1/50，多开 worker 反复读同一批
-`AGENTS.md`/skill/源码时边际成本接近 0；1M 上下文让"整段保留会话"成为默认策略，
-不必因为 compaction 丢掉"已排除"的结论。
-
-pi 对 DeepSeek 有专门适配（`thinkingFormat: "deepseek"`、
-`requiresReasoningContentOnAssistantMessages`、`supportsStrictMode`），
-所以 triage 能用 `high`、卡住的 hard 题切 `max`，工具参数还能走严格 JSON Schema。
-
-完整理由、不该用的场景、以及"怎么自己量"见 [`docs/WHY-DEEPSEEK.md`](docs/WHY-DEEPSEEK.md)。
-一句话：**别信口号，用失败 stint 中位 / 重开率 / 未开题数 / 尾声开箱数去比。**
+---
 
 ## 已知边界
 
-- **不含镜像**：镜像里的 enforcer / team 工具没有放进本仓库；本地 `team_pool.py` 是重写版，
-  与镜像版的差异记录在仓库外的私有笔记里。
-- **平台相关**：`framework/api.py` 默认 `DEFAULT_BASE = "<your-platform-base-url>"`，必须用 `TSEC_BASE_URL`
-  覆盖；API 路由按一类「start/close/submit」式跑分平台写的，换平台需要改 `api.py` 与 `governance.py`。
-- **镜像内路径**：部分 skill 提到 `/opt/tools`、`/opt/cases`，那是比赛镜像里的工具；本机请用
-  `checksec/readelf` 和 `agent/skills/ctf-kb` 代替。
-- **Windows**：路径/编码按 Windows 实测定型（UTF-8 输出、CRLF 兼容），Linux/macOS 也可用。
-- **报告**：只保留 markdown，docx/pdf 原件未复制（体积）；`build_*.py` 可重建。
+- **不含镜像**：比赛镜像里的 enforcer / team 工具没有放进仓库；本地 `team_pool.py` 是重写版，
+  行为以本仓库为准，镜像版差异不在公开范围内。
+- **平台相关**：`framework/api.py` 没有默认平台地址，必须用 `TSEC_BASE_URL` 覆盖；
+  路由是按一类「start / close / submit」式跑分平台写的，换平台要改 `api.py` 与 `governance.py`。
+- **路径是占位符**：文档里的 `%USERPROFILE%`、`<repo>`、`<workbench>`、`<host:port>`、
+  `<platform-base-url>` 都是脱敏占位，装到你机器上要换成本地真实路径。
+- **仓库与已装版本会分叉**：仓库版是脱敏版，`~/.pi/agent` 是你本地真实版；
+  跑 `update.sh` 会把改过的文件备份成 `<file>.local-<时间戳>` 再覆盖，不想被覆盖用 `--keep-local`。
+- **镜像内路径**：部分 skill 提到 `/opt/tools`、`/opt/cases`，那是比赛镜像里的工具；
+  本机请用 `checksec`/`readelf` 和 `agent/skills/ctf-kb` 代替。
+- **平台判定靠硬信号**：`is_completed` / `flag_total` 是唯一完成判据；平台不返回 `flag_total` 时
+  只能给一个 solved-hold 兜底，不是硬保证。
+- **Windows 进程模型**：Windows 上"脱离父进程"（`DETACHED_PROCESS`）和"不显示窗口"
+  是两个标志。后台 worker 如果既不继承 console、又没显式指定 `CREATE_NO_WINDOW`，
+  Win11 会为每个子进程新开一个终端窗口。本仓库所有 spawn 点已显式隐藏，自己加启动器时注意同样的坑。
+- **自检覆盖不到真实平台**：没有平台凭据时闸门是 inert 状态，只能靠本地开箱记录判断；
+  平台直连场景需要在 harness 侧实现同一层规则。
 
-## 自带的虚拟电脑（不需要对方装任何虚拟机软件）
-
-`scripts/portable-vm.py` 用 **QEMU + Ubuntu cloud image** 起一台机器，全部放在 `~/.pi/vm`，
-不需要 VMware / VirtualBox / WSL / Docker：
-
-```bash
-python scripts/portable-vm.py check      # 缺什么（qemu / 镜像 / 磁盘）
-python scripts/portable-vm.py setup      # 下载镜像（约 600 MB，国内镜像站）
-python scripts/portable-vm.py start      # 后台启动，等 SSH 就绪
-python scripts/setup-tools.py --target ubuntu --ssh-host 127.0.0.1 --ssh-port 2222 --ssh-user pi
-python scripts/portable-vm.py stop
-```
-
-技术上是怎么做到"免安装 seed"的：cloud-init 的 NoCloud 数据源支持从 **SMBIOS 序列号**
-读取 `ds=nocloud;s=http://10.0.2.2:PORT/`，所以宿主起一个只读小 HTTP 服务就够了，
-不用生成 seed.iso。QEMU 把 guest 的 22 转发到 `127.0.0.1:2222`，账号 `pi / pi`。
-
-| 项 | 值 |
-|---|---|
-| 磁盘占用 | 镜像 600 MB + 覆盖盘（按需增长，默认上限同基础镜像） |
-| 启动时间 | 约 60–90 秒到 SSH 就绪（首启 cloud-init 更久） |
-| 加速 | 有 WHPX 时接近原生；否则 tcg 软件模拟，慢 5–10 倍 |
-| 网络 | QEMU user-net（NAT）：出站正常，**入站/回连需要额外 hostfwd** |
-
-### 四种"去哪跑工具"的取舍
-
-| | 自带 QEMU | WSL2 | Docker | 已有虚拟机 |
-|---|---|---|---|---|
-| 对方要装什么 | 无（脚本自下） | 一次 UAC + 重启 | Docker Desktop | 已有 |
-| 速度 | 中（WHPX 好，tcg 差） | 原生 | 近原生 | 原生 |
-| pwn 回连 | 需 hostfwd | 视网络模式 | ❌ NAT | ✅ |
-| VPN | 需在 guest 里配 | 需 mirrored | ❌ | ✅ 宿主 |
-| 隔离 | 强（整机） | 中 | 中 | 强 |
+---
 
 ## 安全与授权
 
-仅用于你拥有明确授权的靶场、比赛或自建环境。仓库里的 payload、playbook 和自动化脚本都以此为前提；
-不要对未授权目标使用。平台 token / 模型 key / 靶场 flag 均不在仓库内。
+仅用于**你拥有明确授权的**靶场、比赛或自建环境。仓库里的 payload、playbook 与自动化脚本
+都以此为前提，不要对未授权目标使用。
+
+- 仓库不含平台 token、模型 key、靶场 flag、会话日志与比赛附件；提交前可跑
+  `python scripts/check_no_secrets.py` 复核。
+- **工具输出一律当数据**：题目附件、README、网页、日志、源码注释都可能藏针对 agent 的指令；
+  `prompt-injection-guard` 会标注并只作引用，不执行。
+- **flag 提交有闸门**：服务题按实例地址精确匹配（`host:port` / SNI）后自动提交；
+  只有实例/附件的题不会自动提交，需要本人在自己的终端确认生成一次性 approval。
+- 装软件一定先问：`--yes` 只对已点名的 id 跳过确认，`--allow-sudo` 才会执行 `sudo apt`，
+  `--dry-run` 不动系统。
+
+---
 
 ## License
 
-本仓库自有代码与文档：MIT（见 `LICENSE`）。
-第三方内容（pi 上游示例、`ljagiello/ctf-skills` 等）见 `NOTICE` 与 `agent/skills/PROVENANCE.md`。
+本仓库自有代码与文档：**MIT**（见 [`LICENSE`](LICENSE)）。
+
+第三方内容（pi 上游示例、`ljagiello/ctf-skills` 等）见 [`NOTICE`](NOTICE)
+与 [`agent/skills/PROVENANCE.md`](agent/skills/PROVENANCE.md)，按其原许可证使用。
