@@ -40,7 +40,7 @@ python scripts/kb.py read ctf-web/sql-injection.md 130 200
 2. **同义词并联**：`find "prototype pollution|proto"`、`find "ret2libc|ret2csu"`。
 3. **按域缩范围**：`--domain ctf-web`，域目录名就是 `ctf-*`。
 4. **得到 `file:line` 后**，用 `section`（更省）而不是 `read` 全文。
-5. 笔记里的 CVE/年份只是线索；题目是变体时要回到 **diff / 源码** 验证，别硬套 payload（见 `$PI_WORKBENCH/docs/PITFALLS.md`）。
+5. 笔记里的 CVE/年份只是线索；题目是变体时要回到 **diff / 源码** 验证，别硬套 payload（见 `E:/pi/2/docs/PITFALLS.md`）。
 
 ## 输出纪律
 

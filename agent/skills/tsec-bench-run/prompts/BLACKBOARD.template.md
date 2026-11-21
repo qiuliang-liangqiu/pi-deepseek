@@ -1,6 +1,6 @@
 # 黑板模板（主控在 `run <code>` 后立刻创建）
 
-路径：`$PI_WORKBENCH/work/bb_<code>.md`
+路径：`E:/pi/2/work/bb_<code>.md`
 规则：**追加写，不改别人的段**。Recon 只写 `INTEL`，Exploit 只写 `TRIED` / `RESULT` / `NEED_RECON`。
 
 ---

@@ -1,6 +1,6 @@
 ---
 name: recon
-description: Recon worker for one 靶场平台 target. Fingerprints the assigned container_addr, finds endpoints/versions/JS/credentials, writes facts to the shared blackboard, and returns a compressed summary. No platform tools, no start/close/submit.
+description: Recon worker for one TSecBench target. Fingerprints the assigned container_addr, finds endpoints/versions/JS/credentials, writes facts to the shared blackboard, and returns a compressed summary. No platform tools, no start/close/submit.
 tools: read, bash, write
 ---
 

@@ -4,7 +4,6 @@
 
 - **版本源**：仓库里的 `agent/VERSION`；安装/更新后同一个文件在 `~/.pi/agent/VERSION`。
 - **检测**：`session_start` 时异步跑 `bin/workbench_update.py check --json`，
-  依次尝试 GitHub API（`contents`，raw accept）→ `raw.githubusercontent.com` → jsDelivr，
   结果缓存 6 小时（`PI_UPDATE_TTL`），断网时降级、不阻塞会话。
 - **提示**：有新版本时 footer 显示 `wb ↑ 1.0.1`，并提示 `/wb-update`；同一版本 24 小时内只提示一次。
 - **升级**：`/wb-update` 先 `apply --dry-run` 打印文件计划，确认后 `apply --yes`
@@ -31,4 +30,3 @@
 
 安全：`check` 只读一个版本字符串（`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$`），
 不会执行远端内容；`apply` 运行的 `scripts/update.py` 来自本仓库，且必须经过确认框。
-`~/.pi/agent/.update-hold` 存在时 `apply` 会拒绝（配置源头机器防覆盖）。

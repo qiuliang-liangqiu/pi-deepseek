@@ -75,8 +75,12 @@ def scan_text(text: str, source: str) -> list[Hit]:
     hits: list[Hit] = []
     seen: set[tuple[str, int]] = set()
     for lineno, line in enumerate(text.splitlines(), 1):
-        if not line or len(line) > MAX_LINE:
+        if not line:
             continue
+        # Minified JS/HTML can put the payload on a single 100 KB line; scan
+        # both ends instead of dropping the line.
+        if len(line) > MAX_LINE:
+            line = line[:MAX_LINE] + " \u2026 " + line[-MAX_LINE:]
         for name, sev, rx in COMPILED:
             if not rx.search(line):
                 continue

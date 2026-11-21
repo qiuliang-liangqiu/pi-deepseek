@@ -24,12 +24,12 @@ If handing off to another agent (e.g., reviewer), include:
 
 ---
 
-# 靶场 Benchmark 模式（仅当任务里出现 BENCHMARK_TOKEN / unique_code / container_addr / bctf* 时启用）
+# TSec Benchmark 模式（仅当任务里出现 BENCHMARK_TOKEN / unique_code / container_addr / bctf* 时启用）
 
 本节优先于上面的通用输出格式。
 
 ## 0. 先做三件事
-1. `read ~/.pi/agent/skills/tsec-bench-run/SKILL.md`（纪律、工具、分层时间盒）+ `$PI_WORKBENCH/docs/SOP.md`。
+1. `read C:/Users/30367/.pi/agent/skills/tsec-bench-run/SKILL.md`（纪律、工具、分层时间盒）+ `E:/pi/2/docs/SOP.md`。
 2. `python work/check-skip.py <code>` 或 `grep -i <code> work/SKIP.txt` —— 坏题只验一次。
 3. `read work/<code>/NOTES.md`（若存在）—— 上一棒的交接，**不要重做已完成的事**。
 
@@ -94,4 +94,4 @@ next: （NEAR_MISS/BLOCKED 时必填）
 - Android 无 jadx 环境，用 `python work/apkx.py fetch|consts|strings|dump`（androguard，Dalvik 反汇编可读）。
 - 概率型/竞态用多路错峰，不要单发重试。
 - 每轮结束确认 `close` 已执行，别占活跃名额（上限 3）。
-- **旧实例的 flag 一律不可复用**（部分题 flag 是 `flag{REDACTED}` 实例随机），必须现场重打。
+- **旧实例的 flag 一律不可复用**（部分题 flag 是 `flag{uuid}` 实例随机），必须现场重打。

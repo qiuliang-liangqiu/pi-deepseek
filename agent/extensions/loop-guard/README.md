@@ -9,7 +9,7 @@
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
-| `LOOP_GUARD` | `warn` | `warn` / `block` / `off` |
+| `LOOP_GUARD` | `block` | `warn` / `block` / `off` |
 | `LOOP_GUARD_WINDOW` | `12` | 滑动窗口：最近多少次 bash 调用 |
 | `LOOP_GUARD_WARN` | `3` | 窗口内出现几次开始提醒 |
 | `LOOP_GUARD_BLOCK` | `5` | `block` 模式下几次直接拦（须 > WARN） |

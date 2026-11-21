@@ -119,8 +119,7 @@ function tail(text: string, maxLines = 22, maxChars = 1800): string {
 }
 
 async function checkNow(force: boolean): Promise<CheckInfo | null> {
-	// fetch_version 会依次试 raw / GitHub API / jsDelivr，每个 2 次 4s 超时
-	const result = await run(["check", "--json", ...AGENT_ARGS, ...(force ? ["--force"] : [])], 35_000);
+	const result = await run(["check", "--json", ...AGENT_ARGS, ...(force ? ["--force"] : [])], 20_000);
 	return parseCheck(result);
 }
 

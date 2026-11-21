@@ -23,7 +23,7 @@ proof-of-concept: no
 
 > `nc chall.pwnable.tw 10204`
 >
-> Flag: `flag{REDACTED}`
+> Flag: `FLAG{Gue55_the_answer_isn't_always_Y3S}`
 
 ## Challenge Overview
 

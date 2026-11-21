@@ -1,5 +1,5 @@
 """Interactive client for the clean-room service (via SOCKS tunnel)."""
-import socket, time
+import socket, time, sys
 from socks import connect
 
 HOST, PORT = "swalithlzqougtis5.internal", 80
@@ -37,6 +37,7 @@ class Chal:
 
     def read_idle(self, idle=0.5, total=6.0):
         end = time.time() + total
+        last = time.time()
         while time.time() < end:
             n = len(self.buf)
             self._fill(time.time() + idle)

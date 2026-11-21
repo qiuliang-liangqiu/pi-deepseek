@@ -45,6 +45,6 @@ node test-policy.ts
 
 ## 配套
 
-- 文件/目录/zip/二进制离线扫描：`python ~/.pi/agent\bin\scan_injection.py <path>`
+- 文件/目录/zip/二进制离线扫描：`python C:\Users\30367\.pi\agent\bin\scan_injection.py <path>`
 - 行为准则：`~/.pi/agent/AGENTS.md` 的 “Prompt injection 防护” 一节。
 - 技能：`~/.pi/agent/skills/prompt-injection-guard/SKILL.md`。

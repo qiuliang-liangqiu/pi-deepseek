@@ -5,6 +5,7 @@
  * schedules the 120s triage close or fans out recon+exploit+verifier.
  */
 import { execFile } from "node:child_process";
+import * as fs from "node:fs";
 import { promisify } from "node:util";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -15,6 +16,7 @@ const exec = promisify(execFile);
 const ROOT = path.join(os.homedir(), ".pi", "agent");
 const PY = process.env.PYTHON || "python";
 const POOL = path.join(ROOT, "bin", "team_pool.py");
+const EXT_VERSION = "2026-11-20.3";
 
 async function pool(args: string[], timeout = 30000): Promise<string> {
   try {
@@ -70,6 +72,18 @@ export default function teamPool(pi: ExtensionAPI) {
   }
 
   pi.on("session_start", async () => {
+    try {
+      fs.mkdirSync(path.join(ROOT, "teams"), { recursive: true });
+      const sid = process.env.PI_SESSION_ID || "unknown";
+      fs.writeFileSync(
+        path.join(ROOT, "teams", `.team-pool-ext-${sid}`),
+        `${EXT_VERSION} ${sid} ${new Date().toISOString()}
+`,
+        "utf8",
+      );
+    } catch {
+      /* best effort */
+    }
     lastPoll = Date.now();
     await pool(["poll"], 120000);
     clockCache = { t: 0, s: "" };
@@ -87,6 +101,26 @@ export default function teamPool(pi: ExtensionAPI) {
     }),
     async execute(_id, p) {
       const out = await pool(["dispatch", p.code, p.agent, p.task, "--timeout", String(p.timeout ?? 0)]);
+      // The main starts boxes via tsec.py/framework/curl, not team_pool. Track
+      // the code+address from the task so the enforcer/reaper can see it without
+      // dispatching a second set of workers.
+      const addr = String(p.task).match(/((?:\d{1,3}\.){3}\d{1,3}(?::\d+)?)/)?.[1];
+      if (addr) await pool(["track", p.code, addr]);
+      clockCache = { t: 0, s: "" };
+      return { content: [{ type: "text", text: out }], details: {} };
+    },
+  });
+
+  pi.registerTool({
+    name: "team_track",
+    label: "Team track",
+    description: "Record a box started outside team_pool (tsec.py/framework/curl): code + address, no dispatch. Use when auto-adopt missed the start result.",
+    parameters: Type.Object({
+      code: Type.String({ description: "challenge unique_code" }),
+      addr: Type.String({ description: "container_addr / host:port" }),
+    }),
+    async execute(_id, p) {
+      const out = await pool(["track", p.code, p.addr]);
       clockCache = { t: 0, s: "" };
       return { content: [{ type: "text", text: out }], details: {} };
     },
@@ -168,6 +202,18 @@ export default function teamPool(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: "team_reconcile",
+    label: "Team reconcile",
+    description: "If the platform task is already finished (invalid_state), clear local stale opened markers without calling close. Live tasks are left untouched.",
+    parameters: Type.Object({}),
+    async execute() {
+      const out = await pool(["reconcile"], 60000);
+      clockCache = { t: 0, s: "" };
+      return { content: [{ type: "text", text: out }], details: {} };
+    },
+  });
+
+  pi.registerTool({
     name: "team_cancel",
     label: "Team cancel",
     description: "Cancel one job id or all jobs for a code; kills the child tree.",
@@ -203,10 +249,12 @@ export default function teamPool(pi: ExtensionAPI) {
       clockCache = { t: 0, s: "" };
     }
     const clock = await getClock();
-    if (!clock || clock.includes("0r/0d")) return;
+    if (!clock) return;
+    // Suppress only the truly empty status line; keep CANDIDATE/STALL/RECON/ENF.
+    if (clock.split("|", 1)[0].trim() === "team 0r/0d") return;
     const blocks = Array.isArray(event.content) ? event.content : [{ type: "text", text: textOf(event.content) }];
     return {
-      content: [...blocks, { type: "text", text: `\n[${clock}]` }],
+      content: [...blocks, { type: "text", text: `\n[${clock} | ext ${EXT_VERSION}]` }],
       // Replacing content without structuredContent drops it (pi docs).
       details: event.details,
       structuredContent: event.structuredContent,

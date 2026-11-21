@@ -24,7 +24,7 @@ proof-of-concept: no
 
 > `nc chall.pwnable.tw 10100`
 >
-> Flag: `flag{REDACTED}`
+> Flag: `FLAG{C:\Windows\System32\calc.exe}`
 
 ## Challenge Overview
 

@@ -23,7 +23,7 @@ proof-of-concept: no
 
 > `nc chall.pwnable.tw 10101`
 >
-> Flag: `flag{REDACTED}`
+> Flag: `FLAG{Dubo_duBo_dub0_s0rttttttt}`
 
 ## Challenge Overview
 

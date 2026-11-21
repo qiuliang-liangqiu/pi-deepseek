@@ -23,9 +23,9 @@ proof-of-concept: no
 
 > `nc chall.pwnable.tw 10500`
 >
-> Flag: `flag{REDACTED}`
+> Flag: `FLAG{Cr1t1c4l_h34p_is_very_cr4zyyyyyyyyyy}`
 >
-> Note: A decoy flag `flag{REDACTED}` can be read via the `localtime()`/TZ trick without a shell. The real flag requires shell → running the setuid `get_flag` binary with passphrase `"Crazy heap !!"`.
+> Note: A decoy flag `FLAG{Oh_y0u_f1nd_th3_s3cr3t_1n_loc4ltim3}` can be read via the `localtime()`/TZ trick without a shell. The real flag requires shell → running the setuid `get_flag` binary with passphrase `"Crazy heap !!"`.
 
 ## Challenge Overview
 

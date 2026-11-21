@@ -1,6 +1,6 @@
 # 作战条令（源自《Pi 智能体高分训练与架构演进深度实战笔记》v2.0 蒸馏）
 
-> 来源：`~\Desktop\PI智能体高分训练与架构演进深度实战笔记.docx`
+> 来源：`C:\Users\30367\Desktop\PI智能体高分训练与架构演进深度实战笔记.docx`
 > 用途：跑分/CTF/渗透任务时的行为准则 + 做训练数据、SFT、GRPO 时的规范。
 > 标注：`[可执行]` = 现在就能照做；`[训练侧]` = 做数据集/微调/RL 时才用；`[基建侧]` = 描述 Pi 内核架构，不要假设本地已存在同名机制。
 
@@ -89,7 +89,7 @@ P:       连续 2 轮同一失败命令 −1.5 ；访问外网 −3.0 ；单轮�
 
 ## 7. 部署与混合架构 `[基建侧]`
 
-- 靶场平台 镜像：`docker build` → `docker save | pigz -6 > agent.tar.gz`（≤3.0GB）→ 网页上传 → 运行时注入 `OPENAI_API_KEY` / `MODEL_NAME`，`BENCHMARK_TOKEN`、`BENCHMARK_BASE_URL` 由沙箱动态注入，**0 硬编码**
+- TSecBench 镜像：`docker build` → `docker save | pigz -6 > agent.tar.gz`（≤3.0GB）→ 网页上传 → 运行时注入 `OPENAI_API_KEY` / `MODEL_NAME`，`BENCHMARK_TOKEN`、`BENCHMARK_BASE_URL` 由沙箱动态注入，**0 硬编码**
 - 生产形态：**Hermes 主控（跨目标编排、状态持久化、凭据、证据链、报告）+ Pi Worker 集群（毫秒冷启、一任务一生灭、只回传核心事实）**
 - 自愈：题目槽位看门狗 + `reconcile_orphaned_slots`，网络抖动/靶机异常自动释放重建，避免悬挂占名额
 
@@ -97,7 +97,7 @@ P:       连续 2 轮同一失败命令 −1.5 ；访问外网 −3.0 ；单轮�
 
 ## 8. 复盘沉淀（默认行为，不需要额外一步）
 
-库的位置：`$PI_WORKBENCH/docs/CASELIB/`（`framework/caselib.py` 实现，`cli close` 自动触发）。
+库的位置：`E:/pi/2/docs/CASELIB/`（`framework/caselib.py` 实现，`cli close` 自动触发）。
 
 | 来源 | 去向 |
 |---|---|
@@ -114,25 +114,28 @@ P:       连续 2 轮同一失败命令 −1.5 ；访问外网 −3.0 ；单轮�
 
 ## 9. 分配纪律（portfolio：时间花在哪，比花得快不快更决定分数）`[可执行]`
 
-多年/多轮闭卷跑分的聚合观察（数字来自作者自己的历史记录，**具体场次与平台已隐去**；
-可用 `skills/tsec-bench-run/tools/analyze_events.py` 对你自己的 events.csv 复算）：
+证据来自 2026-11-16 闭卷一轮（50 题 / 7h51m，28 解 / 12000 分，
+原始 `run-48753-events.csv`，可用 `skills/tsec-bench-run/tools/analyze_events.py` 复算）
+与 2026-11-17 的 `run-49340`（2.94h，9 解 / 2000 分；Saltern 已拿 2 flags 后重开 3 次，
+88 分钟 0 分）、2026-11-18 的 `run-49545`（7.89h，37 解 / 47 flags / 13800；
+triage 50 题 15 分钟全开、20:06 提前结束；剩 53 flags；tch3-05 得分后 71 分钟才关）：
 
-- **做出题**的 stint：中位 **5–6 分钟**；
-- **没做出题**的 stint：中位 **15–20 分钟**，通常吃掉全场 **2/3** 的时间；
-- 过半开箱是**重开旧目标**；收尾 30 分钟常出现“开 10 个箱、0 分”。
+- 28 次**做出题**的 stint：中位 **5.3 分钟**，合计 6.09 容器小时；
+- 39 次**没做出题**的 stint：中位 **16.5 分钟**，合计 **12.47 容器小时**（≈5.3h 注意力，占全场 2/3）；
+- 61% 的开箱（41/67）是重开旧目标；最后 30 分钟开 10 个箱、0 分。
 
-→ 手不慢，是钱花错了地方。以下七条按“最容易犯”排序：
+→ 手不慢，是钱花错了地方。以下六条按“最容易犯”排序：
 
-| 规则 | 硬阈值 | 依据 |
+| 规则 | 硬阈值 | 本轮依据 |
 |---|---|---|
-| **30 分钟 triage** | 开局 2h/3min 改为 30min/30–60s；3 条 lane 一箱一个，`triage.sh` 过全部题目的浅指纹（title/headers/5 路径/JS/banner），写 A/B/C/D；20 分钟紧、30 分钟稳 | 官方 difficulty/score 是白送的；真正缺的是“有没有 5 分钟入口”；旧 2h 规则太慢 |
-| **已完成题不重开** | 只有 `is_completed: true` 或 `flags >= flag_total` → 不 start；**不是 2 flags**；`force` 仅用于有证据的剩余 flag | 已解出后重开是纯浪费；多 flag 卷 2/6、3/6 都还有剩余 |
-| 止损即关箱 | 12–15 分钟无新原语 → 三行笔记 + `close` | 失败 stint 中位是成功中位的 3 倍 |
-| 禁止空挂 | 不在打的箱一律关；并发槽只留给后台任务（ffuf/hashcat/长扫/编译） | 空挂 1–2 小时 0 分是常见失分点 |
-| 重开必须有新招 | 重开前先读旧笔记，写下“这次的不同点”，否则不重开 | 过半开箱是重开；同一题被反复开 3–6 次 |
-| 收尾冻结 | 最后 45 分钟不开新侦察，只执行队列里已写好的“下一招” | 末尾 30 分钟开 10 个箱 0 分 |
-| **解出后按 flag_total 找剩余 flag** | 单 flag 题 `is_completed` 后 10 秒关；多 flag 题继续到 `is_completed`/`flag_total`，不要 `flags>=2` 就关 | 多 flag 卷常见“拿到第一面就关了” |
-| **close 失败要重试** | 非 404 失败保留 owned、退避重试；adapter 轮询平台 `is_completed` | 本地先删 owned → 平台箱子还在、enforcer 不再重试 |
+| **30 分钟 triage** | 开局 2h/3min 改为 30min/30–60s；3 条 lane 一箱一个，`triage.sh` 过 50 题浅指纹（title/headers/5 路径/JS/banner），写 A/B/C/D；20 分钟紧、30 分钟稳 | 官方 difficulty/score 是白送的；真正缺的是“有没有 5 分钟入口”；旧 2h 规则太慢 |
+| **已完成题不重开** | 只有 `is_completed: true` 或 `flags >= flag_total` → 不 start；**不是 2 flags**；`force` 仅用于有证据的剩余 flag | Saltern 2 flags 后重开 3 次，88 分钟 0 分；Aperture 解出后停槽 5h |
+| 止损即关箱 | 12–15 分钟无新原语 → 三行笔记 + `close` | 失败 stint 中位 16.5min，是成功中位的 3 倍 |
+| 禁止空挂 | 不在打的箱一律关；并发槽只留给后台任务（ffuf/hashcat/长扫/编译） | Network Monitor 空挂 131min、Publishing Platform 63min，均 0 分 |
+| 重开必须有新招 | 重开前先读旧笔记，写下“这次的不同点”，否则不重开 | 41/67 次开箱是重开；Upload Board 被开 6 次 4/28/2/1/3/19min |
+| 收尾冻结 | 最后 45 分钟不开新侦察，只执行队列里已写好的“下一招” | 末尾 30 分钟 10 开 0 分 |
+| **解出后按 flag_total 找剩余 flag** | 单 flag 题 `is_completed` 后 10 秒关；多 flag 题（截图 2/6、3/6）继续到 `is_completed`/`flag_total`，不要 `flags>=2` 就关 | 100 flags/50 题；49545 只拿 47，剩 53；旧逻辑 2 flags/180s 提前关 |
+| **close 失败要重试** | 非 404 失败保留 owned、退避重试；adapter 轮询平台 `is_completed` | tch3-05 得分后 71 分钟才关；单 flag 题 180s 白等 3 分钟 |
 
 配套硬要求：
 - 每箱关闭时必留三行笔记（入口 / 版本 / 已试+反例 / 下一招），否则重开就是重新热身；
@@ -143,24 +146,24 @@ P:       连续 2 轮同一失败命令 −1.5 ；访问外网 −3.0 ；单轮�
 
 | 冲突点 | 正确用法 | 反例/代价 |
 |---|---|---|
-| 单题深链（engagement / 多段 CVE 链 / hard 单题） | **不套用这六条**。判据是“最近 15 分钟有无新事实/里程碑”，不是“有无 flag” | 硬套 15 分钟会把 60–120 分钟的 CVE 链/堆布局切碎 |
-| 闸门 = 原语，不是总时长 | 只砍“无新原语”的停留；有新原语就继续到 tier 硬截止 | 成功的 long stint（40–60 分钟、单题 +800~1000）按总时长砍会丢近 30% 总分 |
-| `hold` vs `close` | `hold` 仅用于“已有可复现原语 + 明确下一招 + 等后台产物”，并写进笔记；其余一律 `close` | 把 `hold` 当“舍不得”用，就会出现小时级空挂 |
+| 单题深链（ctfy engagement、`cve_stage`、hard 单题） | **不套用这六条**。判据是“最近 15 分钟有无新事实/里程碑”，不是“有无 flag” | 硬套 15 分钟会把 60–120 分钟的 CVE 链/堆布局切碎 |
+| 闸门 = 原语，不是总时长 | 只砍“无新原语”的停留；有新原语就继续到 tier 硬截止 | 本轮 6 个成功 stint >15min（Atlas 59min/+1000、EchoDeck 40min/+800），按总时长砍要丢 3600 分（=29% 总分） |
+| `hold` vs `close` | `hold` 仅用于“已有可复现原语 + 明确下一招 + 等后台产物”，并写进笔记；其余一律 `close` | 把 `hold` 当“舍不得”用，就会复现 131min 空挂 |
 | 3 并发 vs 禁止空挂 | 上限是“最多”不是“要开满”；单执行体时空槽不扣分；多 worker 时每箱都有主人，不算空挂 | 为了占满槽位而开箱＝让自己的墙钟变长 |
-| 第二面 flag 窗口 | **仅当卷面 flag 总数 > 题目数**（如 100/50）才做；单 flag 平台直接跳过 | 单 flag 平台每题多等 3 分钟，几十题就是几十小时 |
-| 收尾冻结 | 冻结的是“摸黑开箱/新侦察”，不是开箱本身；已有笔记下一招、指纹已知的低分题仍可开 | 收尾时开一个已知便宜的题、3 分钟 +300，属于应该保留的那类 |
+| 第二面 flag 窗口 | **仅当卷面 flag 总数 > 题目数**（如 100/50）才做；单 flag 平台直接跳过 | 单 flag 跑分平台 28×3min = 84 分钟纯浪费 |
+| 收尾冻结 | 冻结的是“摸黑开箱/新侦察”，不是开箱本身；已有笔记下一招、指纹已知的低分题仍可开 | 本轮 21:53 开 News Archive、3 分钟 +300，属于应该保留的那类 |
 | 代码实现 | 要真执行“15min 无原语关”，得新加 `--stall`；**不要复用 `--idle`**（现语义只在硬截止后才关）也不要用 `--hard`（无条件杀） | 改 `--idle` 会让所有长活被硬截止前的空闲误杀（`governance.decide_watch` 默认只警告就是为这个） |
-| 子代理 3/箱 | 默认 3 worker/箱（recon/exploit/verifier）、3 箱共 9；triage 1/箱；429/CPU 降 1–2；主控唯一平台工具，worker 只 bash/read/write、无 token | 3/箱不等于 3 题，容器槽位仍是箱子；parallel 是 Promise.all，不要 batch 9 等最慢 |
+| 子代理 3/箱 | 默认 3 worker/箱（recon/exploit/verifier）、3 箱共 9；triage 1/箱；429/CPU 降 1–2；主控唯一平台工具，worker 只 bash/read/write、无 token | 用户明确 token 换效率；3/箱不等于 3 题，容器槽位仍是箱子；parallel 是 Promise.all，不要 batch 9 等最慢 |
 
-### v10 增量
+### v10 增量（2026-11-17）
 
-- **triage 不是 3 人一题**：3 条 lane 一箱一个，才能 20–30 分钟过完全部题目；3 人一题只过 3 题。
+- **triage 不是 3 人一题**：3 条 lane 一箱一个，才能 20–30 分钟过 50 题；3 人一题只过 3 题。
 - **完成闸门**：`is_completed`/`flag_total` 后重开是纯浪费；2/6、3/6 还有剩余，不能按 2 flags 关。
 - **子代理**：`recon/exploit/verifier`；主控持有 `start/close/submit`，worker 只打 `container_addr`；
   blackboard `/work/teams/<code>/`，`flock` 串行破坏性动作；flag 只由主控复核后提交。
 - **parallel 语义**：一批任务会等最慢的返回；不要为了“同时开 9 个”把 9 个塞进一个 call，
   按箱/按假设分成小批，避免空闲槽被最慢的拖住。
-- **20–30 分钟 triage 的边界**：只能做浅指纹/A-B-C-D 分档，不是“所有题全解一遍”；
+- **20–30 分钟 triage 的边界**：只能做浅指纹/A-B-C-D 分档，不是“50 题全解一遍”；
   真正的深度判断留给开箱后的 5–15 分钟。
 - **v11 默认**：15 分钟无新原语自动关（touch 续命）；hard/600+ 自动派 1 recon；
   `submit_flag` 无 verified 只警告；30 分钟 triage 提醒写 `TRIAGE.md`。
@@ -171,7 +174,9 @@ P:       连续 2 轮同一失败命令 −1.5 ；访问外网 −3.0 ；单轮�
   auto-recon 关闭；只能 triage.sh + A/B/C/D + close；30 分钟后恢复正常做题。
 - **v12.2 提前结束**：全部 open 题的 `triage.txt` 就绪 → `triage_complete` 校验通过 →
   `triage_done=true` → 立即 A→B，不等 30 分钟。
-- **v12.3 完成判据**：`flags>=2` 不是完成；按 `flag_total`/`is_completed` 关，
+- **run-49545 验证**：triage 15 分钟覆盖 50 题、20:06 提前结束；37 解/47 flags/13800。
+  但 `flags>=2` 不是完成：截图 2/6、3/6，剩 53 flags；单 flag 题 180s 白等；
+  tch3-05 71 分钟是 close 失败/状态丢失。v12.3 已按 `flag_total`/`is_completed` 关，
   completed 10s、有 flag 未完成 600s 兜底、close 失败保留/重试、adapter 30s 轮询
   `is_completed`、start 对已得 flag 的 closed code 默认拒绝、team_dispatch 3/9 上限。
 - **v12.5**：clock/run_status 带 `team Nr/Md` + `CANDIDATE`；jobs 持久化

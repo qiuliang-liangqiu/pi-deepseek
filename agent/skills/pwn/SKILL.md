@@ -9,7 +9,7 @@ description: "Pwn triage and exploit build order (bug → leak → arbitrary rea
    NEEDED libs, libc hints and nearby loader/libc.
 1b. If the image ships it, retrieve a similar known case before writing an exploit:
    `python3 /opt/cases/retrieve.py --text "heap menu view 2.43"` (or `--query` JSON);
-   locally use `~/.pi/agent/skills/ctf-kb` (`kb.py`) instead.
+   locally use `C:/Users/30367/.pi/agent/skills/ctf-kb` (`kb.py`) instead.
    Use it as a plan/template, not as an answer: verify every offset against the
    current binary and libc.
 2. Classify the target before choosing a technique:

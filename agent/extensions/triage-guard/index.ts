@@ -31,9 +31,10 @@ export default function triageGuard(pi: ExtensionAPI) {
 		}
 		if (name === "bash") {
 			const cmd = String(event.input?.command || "");
+			const readCmd = /(?:^|[\/\s])(cat|grep|rg|head|tail|less|sed)\b/.test(cmd);
 			const submits =
 				/openapi\/v1\/challenges\/submit/.test(cmd) ||
-				/(?:^|[\/\s])sub\.py\b/.test(cmd) ||
+				(!readCmd && /(?:^|[\/\s])sub\.py\b/.test(cmd)) ||
 				/framework\.cli\s+submit\b/.test(cmd);
 			if (submits && !/triage_gate\.py/.test(cmd)) {
 				return { block: true, reason: "TRIAGE active: submissions (submit_flag, /challenges/submit, work/sub.py, framework.cli submit) are blocked until triage_gate.py done or the phase ends." };

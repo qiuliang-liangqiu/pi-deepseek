@@ -1,15 +1,8 @@
-"""Resolve A records via DNS-over-TCP to the tunnel resolver (through SOCKS).
-
-The resolver address is deployment-specific: pass it in, or export TUNNEL_DNS.
-    python dnsq.py <name> [server] [port]
-"""
-import os, struct, socket, sys
+"""Resolve A records via DNS-over-TCP to the tunnel resolver (through SOCKS)."""
+import struct, socket, sys
 from socks import connect
 
-def q(name, server=None, port=53, timeout=6):
-    server = server or os.environ.get("TUNNEL_DNS")
-    if not server:
-        raise SystemExit("resolver address required: pass <server> or set TUNNEL_DNS")
+def q(name, server="172.16.255.3", port=53, timeout=6):
     tid = 0x1234
     hdr = struct.pack(">HHHHHH", tid, 0x0100, 1, 0, 0, 0)
     qn = b"".join(bytes([len(p)])+p.encode() for p in name.split(".")) + b"\x00"

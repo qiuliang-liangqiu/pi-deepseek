@@ -1,5 +1,5 @@
 #!/bin/bash
-# 30-60 second shallow fingerprint for one 靶场平台 target.
+# 30-60 second shallow fingerprint for one TSecBench target.
 # Usage: triage.sh <container_addr> [outfile]
 set -u
 addr="${1:?usage: triage.sh <addr> [outfile]}"

@@ -56,8 +56,8 @@
 
 ```bash
 # 0) 前置：VPN + token
-curl -s "$TSEC_HEALTH_URL" | head -c 200       # 必须 status:"ok"
-cd $PI_WORKBENCH && python -m framework.cli status
+curl -s http://10.0.100.58 | head -c 200        # 必须 status:"ok"
+cd E:/pi/2 && python -m framework.cli status
 
 # 0.5) 先查库：同族战例比从零摸索快
 #      read docs/CASELIB/INDEX.md  → 找到同 family 的笔记直接照搬打法链
@@ -67,7 +67,7 @@ python -m framework.cli next
 
 # 2) start + 建黑板（一次做完，别拖）
 python -m framework.cli run <code>              # 打印 addr + fingerprint
-cp ~/.pi/agent/skills/tsec-bench-run/prompts/BLACKBOARD.template.md \
+cp /c/Users/30367/.pi/agent/skills/tsec-bench-run/prompts/BLACKBOARD.template.md \
    work/bb_<code>.md                            # 填 META 段
 
 # 3) 按决策表派活；4) 收到 RESULT 立刻 close，滚动补位
@@ -84,7 +84,7 @@ python -m framework.cli panic                   # 关掉所有 owned 并逐个�
 | `{CODE}` | `unique_code` |
 | `{HOST}` / `{PORT}` | `run` 打印的地址拆开 |
 | `{DEADLINE}` | 当前时间 + 时间盒（`date +%H:%M`） |
-| `{BB}` | `$PI_WORKBENCH/work/bb_<code>.md` |
+| `{BB}` | `E:/pi/2/work/bb_<code>.md` |
 | `{UA}` | 固定浏览器 UA（见 prompts/README.md） |
 
 ## 6. 每轮结束的沉淀（自动，不用管）

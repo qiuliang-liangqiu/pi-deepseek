@@ -588,7 +588,7 @@ io.sendline(payload)
 
 # 2. Kernel stub runs the I/O-port sequence above and writes the flag back.
 io.recvuntil(b"flag{")
-log.success(b"flag{REDACTED}"))
+log.success(b"flag{" + io.recvuntil(b"}"))
 ```
 
 **Key insight:** The more privilege rings a challenge stacks, the more important it is to map *where data must live* versus *where code must run*. HITCON Abyss enforced a kernel whitelist on userspace hypercalls, but kernel code itself could still poke the hypervisor ports directly. The same pattern recurs in real VM escapes: a guest kernel primitive plus an I/O-port write reaches the VMM without going through the guest's own syscall table. When attacking `kvm_guest_enter` style hypervisors, look for memory-mapped I/O regions or port ranges that the VMM traps — they are hypercalls in disguise and often lack the argument sanitisation that formal hypercall interfaces require.

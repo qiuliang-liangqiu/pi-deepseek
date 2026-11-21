@@ -92,7 +92,7 @@ author: "<your name or team>"
 ## Flag
 
 \`\`\`
-flag{REDACTED}
+flag{example_flag_here}
 \`\`\`
 ```
 

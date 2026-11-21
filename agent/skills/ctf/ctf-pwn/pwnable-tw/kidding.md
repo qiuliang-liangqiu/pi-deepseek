@@ -24,7 +24,7 @@ proof-of-concept: no
 
 > `nc chall.pwnable.tw 10303`
 >
-> Flag: `flag{REDACTED}`
+> Flag: `FLAG{Ar3_y0u_k1dd1ng_m3}`
 
 ## Challenge Overview
 
@@ -267,7 +267,7 @@ The flag file `/home/flag/I_am_fl4g` is not world-readable. A setuid helper `/ho
 
 ```bash
 cd /home/flag && echo ./I_am_fl4g | ./get_flag
-# → "Here is your flag: flag{REDACTED}"
+# → "Here is your flag: FLAG{Ar3_y0u_k1dd1ng_m3}"
 ```
 
 ## Solution Write-ups

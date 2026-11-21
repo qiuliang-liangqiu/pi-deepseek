@@ -6,9 +6,9 @@ description: CTFY / tpctf 的 engagement（WireGuard VPN）题目：Windows 无�
 # CTFY engagement 题 playbook
 
 本次实战：`clean-room`（pwn/hard，ASan+UBSan+seccomp，菜单式记录管理器）、`Hint Me Maybe`（reverse/medium，TTF hinting VM + checker pipeline）、`cve_stage`/AsterOps（web/medium，4 段 gate：litellm wheel → PHP stale unserializer → Node brotli CVE → Go toolchain）。
-参考实现：`clean-room` 在 `$PI_HOME/比赛/2`（`exploit.py` `ch.py` `socks.py` `up.sh` `WRITEUP.md`）；
-`Hint Me Maybe` 在 `$PI_HOME/比赛/1`（`suleq.py` `fontinv2.py` `chain0.py`；wireproxy 配置 `wgproxy*.conf`）；
-`cve_stage` 在 `$PI_HOME/比赛/3/cve_stage`（`WRITEUP.md`、`solve/`、`_ctfy/`）。
+参考实现：`clean-room` 在 `E:/pi/比赛/2`（`exploit.py` `ch.py` `socks.py` `up.sh` `WRITEUP.md`）；
+`Hint Me Maybe` 在 `E:/pi/比赛/1`（`suleq.py` `fontinv2.py` `chain0.py`；wireproxy 配置 `wgproxy*.conf`）；
+`cve_stage` 在 `E:/pi/比赛/3/cve_stage`（`WRITEUP.md`、`solve/`、`_ctfy/`）。
 
 **工程纪律见 §8**（先算信息上界 → 先量传输 → 延迟注入回归 → 流水线 pulse → 跑通即备份）。
 这节来自 `The Last 3 Minutes`（游戏 + 随机数题，4 小时里 3 小时的弯路）。
@@ -126,7 +126,7 @@ POST https://ctfy.tsinghua.edu.cn/api/v1/submissions
 ## 7. 多段 web / CVE 链（AsterOps / cve_stage 实战）
 
 本次实战：TPCTF 2026 `cve_stage`（web/medium，4 段 gate：litellm wheel → PHP stale unserializer → Node brotli CVE → Go toolchain）。
-参考实现：`$PI_HOME/比赛/3/cve_stage`（`WRITEUP.md`、`solve/stage1_wheel.py`、`solve/solve.py`、`solve/stage3_4.py`、`_ctfy/` 原始请求与触发流）。
+参考实现：`E:/pi/比赛/3/cve_stage`（`WRITEUP.md`、`solve/stage1_wheel.py`、`solve/solve.py`、`solve/stage3_4.py`、`_ctfy/` 原始请求与触发流）。
 
 ### 7.1 先拆 gate 链路，别从第一段盲打
 
@@ -202,7 +202,7 @@ POST https://ctfy.tsinghua.edu.cn/api/v1/submissions
 ## 8. 工程纪律（The Last 3 Minutes 复盘，游戏/交互/随机数类题通用）
 
 本次实战：`The Last 3 Minutes`（crypto/web，浏览器平台跳跃 + 64 bit 保险箱密码）。
-参考实现：`$PI_HOME/比赛/5`（`bot4.py` 延迟容错 runner、`probe_fight9.py` 单杀零伤验证、
+参考实现：`E:/pi/比赛/5`（`bot4.py` 延迟容错 runner、`probe_fight9.py` 单杀零伤验证、
 `REPRO.md` 复现记录、`RETRO.md` 完整复盘）。
 
 ### 8.1 先做三件事，再写一行利用

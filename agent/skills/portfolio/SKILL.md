@@ -5,6 +5,11 @@ description: "How to allocate time across many short challenges: breadth-first f
 
 # portfolio — allocation before exploitation
 
+> **本地 pi 覆盖（2026-11-21）**：本机 `run-gate` 会 block partial 多 flag 箱的 close，
+> `Close is never blocked` 只适用于镜像 harness；`touch_challenge` 本地不存在，改用
+> `python -m framework.cli touch <code>` 或 `notes.md` 的 `[P]` 行；`triage_complete`
+> 本地用 `python bin/triage_gate.py done`。
+
 Measured on 50-challenge / 8-hour runs: the median successful stint is about
 5 minutes, but failed stints and parked boxes consume most of the wall clock.
 The solver is rarely slow; it spends time in the wrong places.
@@ -14,14 +19,17 @@ The solver is rarely slow; it spends time in the wrong places.
 Every tool result ends with
 
 ```
-[clock t+2h14m | budget 5h46m left | open: demo-02 hard 18m/1h00m STALL auto 12m, demo-11 medium 3m/20m auto 17m | solved 4 | score 1200 | BACKLOG demo-16 (800 pts) | think high]
+[clock t+2h14m | budget 5h46m left | open: tch3-02 hard 18m/1h00m STALL auto 12m, we-1 medium 3m/20m auto 17m | solved 4 | score 1200 | BACKLOG tch3-16 (800 pts) | think high]
 ```
 
-- `STALL` = 15+ minutes without an accepted flag.
+- `STALL` = 15+ minutes without a new primitive（不是“没有 accepted flag”；本地 clock 看
+  `notes.md` / `result-*` / `candidate-*` 的 mtime）。
 - `auto` = the harness deadline. A completed box (`is_completed`/`flag_total`)
   closes **10 s after the last flag**. A box with flags but not completed is
-  kept for remaining flags; a 600 s solved-hold backstop closes it. An
-  unsolved box closes **15 minutes after the last `touch_challenge`**.
+  kept for remaining flags: known `flag_total` needs completion or a
+  `run_gate.py abandon` with a fresh stall note; unknown total uses a 600 s
+  solved-hold. An unsolved box closes **15 minutes after the last
+  `touch_challenge`**.
 - `BACKLOG` = the highest-score challenge that has never been opened; start it
   before another code at 10/30/50% of the budget.
 
@@ -29,7 +37,7 @@ Every tool result ends with
 
 1. **30-minute triage, then A→B with one hard slot.** First 2 minutes: list
    and sort. First 25–30 minutes: 3 lanes, one box each, 30–60 seconds per
-   challenge with `~/.pi/agent/bin/triage.sh`; write A/B/C/D; close and rotate.
+   challenge with `C:/Users/30367/.pi/agent/bin/triage.sh`; write A/B/C/D; close and rotate.
    **Enforced:** a box opened in the first 30 minutes is `TRIAGE` and the
    harness closes it at the 120-second probe deadline; auto-recon is off.
    All 50 get a shallow fingerprint — do not spend 2 hours. If every open
@@ -42,7 +50,8 @@ Every tool result ends with
    `touch_challenge(code, what)` resets the 15-minute auto-close and the chain
    may run to the tier limit (easy 5/10, medium 10/20, hard 30/60). Do not cut
    a live chain; do not call `touch` for mere activity.
-3. **No parked boxes.** Close is never blocked; notes are optional. A slot is
+3. **No parked boxes.** 镜像里 close 不受拦；本机 `run-gate` 对 partial 多 flag 箱会 block
+   （需要 abandon/approval）。notes 对 0-flag 箱可选，对 partial 箱的 abandon 必需。A slot is
    for work, not storage. Before a long background job, `touch_challenge` so the
    stall timer does not close the box mid-job.
 4. **Completed means `is_completed`/`flag_total`, not 2 flags.** This paper has
@@ -96,4 +105,3 @@ closes and the next reopen starts cold.
 - Do not close a box 30 seconds after a correct flag when the paper has two
   flags per challenge — but do not fight the auto-close either; submit the
   second flag before the window ends.
-# repo change

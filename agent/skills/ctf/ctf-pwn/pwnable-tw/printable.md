@@ -25,7 +25,7 @@ proof-of-concept: no
 >
 > `nc chall.pwnable.tw 10307`
 >
-> Flag: `flag{REDACTED}`
+> Flag: `FLAG{FILE_str34m_1s_pr1nt4bl3}`
 
 ## Challenge Overview
 

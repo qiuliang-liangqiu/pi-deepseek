@@ -110,8 +110,12 @@ export function scanText(text: string): Hit[] {
 	const seen = new Set<string>();
 	const lines = text.split(/\r?\n/);
 	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		if (!line || line.length > 4000) continue;
+		const rawLine = lines[i];
+		if (!rawLine) continue;
+		// Minified JS/HTML payloads are often one very long line; scan both
+		// ends instead of skipping the whole line.
+		const line =
+			rawLine.length > 4000 ? rawLine.slice(0, 4000) + " … " + rawLine.slice(-4000) : rawLine;
 		for (const rule of RULES) {
 			const m = rule.re.exec(line);
 			if (!m) continue;

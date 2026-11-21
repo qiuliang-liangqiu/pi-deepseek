@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 import json
 import os
 import random
@@ -56,18 +57,26 @@ TRIAGE = ROOT / "triage_state.json"
 TRIAGE_GATE = ROOT / "bin" / "triage_gate.py"
 SKILLS = ROOT / "skills"
 GUARD = ROOT / "extensions" / "prompt-injection-guard" / "index.ts"
+WORKER_GUARD = ROOT / "worker-extensions" / "worker-guard" / "index.ts"
 PY = sys.executable
 PI = os.environ.get("TEAM_PI_BIN", "pi")
 PI_NODE = os.environ.get("TEAM_PI_NODE") or __import__("shutil").which("node") or "node"
 PI_LAUNCHER = ROOT / "bin" / "pi-launcher.js"
+# Windows: a console child of a console-less parent makes Windows allocate a NEW
+# console, which Win11 hands to Windows Terminal => a terminal window pops up and
+# stays for the worker's lifetime. Every process we spawn must opt out.
+NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 TRIAGE_PROBE = float(os.environ.get("TBENCH_TRIAGE_PROBE_S", "120"))
+TRIAGE_RESTART_AFTER = float(os.environ.get("TEAM_TRIAGE_RESTART_AFTER", "21600"))
 MAX_PER_BOX = int(os.environ.get("TEAM_MAX_PER_BOX", "3"))
 MAX_TOTAL = int(os.environ.get("TEAM_MAX_TOTAL", "9"))
 DEFAULT_JOB_TIMEOUT = float(os.environ.get("TEAM_JOB_TIMEOUT", "1800"))
 ORPHAN_KILL_S = float(os.environ.get("TEAM_ORPHAN_KILL_S", "300"))
 ORPHAN_KILL_MAX_S = float(os.environ.get("TEAM_ORPHAN_KILL_MAX_S", "3600"))
+BACKFILL_MAX_AGE = float(os.environ.get("TEAM_BACKFILL_MAX_AGE", "21600"))
 AUTO_RECON = os.environ.get("TEAM_AUTO_RECON", "1") != "0"
-RECON_WINDOW_S = float(os.environ.get("TEAM_RECON_WINDOW_S", "7200"))
+RECON_WINDOW_S = float(os.environ.get("TEAM_RECON_WINDOW_S", "1800"))
+CANDIDATE_MAX_AGE = float(os.environ.get("TEAM_CANDIDATE_MAX_AGE", "21600"))
 STALL_CLOSE_S = float(os.environ.get("TEAM_STALL_CLOSE_S", os.environ.get("TBENCH_STALL_CLOSE_S", "900")))
 SOLVED_HOLD_S = float(os.environ.get("TEAM_SOLVED_HOLD_S", "600"))
 COMPLETED_GRACE_S = float(os.environ.get("TEAM_COMPLETED_GRACE_S", "10"))
@@ -134,6 +143,20 @@ def _hhmm() -> str:
     return time.strftime("%H:%M")
 
 
+def _valid_code(code) -> str:
+    """Reject box codes that would escape TEAMS/ or hit a Windows device."""
+    c = str(code or "").strip()
+    upper = c.upper()
+    reserved = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
+    bad = (not c or c in (".", "..") or upper.split(".", 1)[0] in reserved
+           or c.endswith(".")
+           or any(ch in c for ch in ("/", "\\", ":", "\x00"))
+           or any(ord(ch) < 32 for ch in c))
+    if bad:
+        raise SystemExit(f"[team] invalid box code: {code!r}")
+    return c
+
+
 def _atomic(path: Path, data) -> None:
     """Write JSON through a unique temp file, then replace."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -174,34 +197,36 @@ def jobs_lock(timeout: float = 10.0):
     """Best-effort cross-process lock for jobs.json (Windows + POSIX)."""
     TEAMS.mkdir(parents=True, exist_ok=True)
     end = _now() + max(1.0, timeout)
+    owner = f"{os.getpid()}-{random.randint(100000, 999999)}"
     fd = None
     while True:
         try:
             fd = os.open(str(JOBS_LOCK), os.O_CREAT | os.O_EXCL | os.O_RDWR)
-            os.write(fd, str(os.getpid()).encode("ascii", "replace"))
+            os.write(fd, owner.encode("ascii", "replace"))
             break
         except FileExistsError:
-            try:
-                if _now() - JOBS_LOCK.stat().st_mtime > 30:
+            pass  # ordinary contention; wait and retry below
+        except OSError as exc:
+            # Windows can return EACCES instead of EEXIST while the previous
+            # holder is unlinking the lock (delete-pending) or an AV scanner
+            # has it open. Those are transient; anything else is fatal.
+            if exc.errno not in (errno.EACCES, errno.EPERM, errno.EBUSY):
+                raise
+        try:
+            if _now() - JOBS_LOCK.stat().st_mtime > 30:
+                # Stale only if the recorded owner is gone. On POSIX an unlink
+                # succeeds while the holder still has the fd open, so a live
+                # owner must not lose the lock just because it is slow.
+                stale = JOBS_LOCK.read_text(encoding="utf-8", errors="replace").strip()
+                pid = int(stale.split("-", 1)[0]) if stale else 0
+                if not pid or not alive(pid):
                     JOBS_LOCK.unlink()
                     continue
-            except OSError:
-                pass
-            if _now() > end:
-                raise TimeoutError("jobs.lock timeout")
-            time.sleep(0.02)
-        except Exception:
-            if fd is not None:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-                try:
-                    JOBS_LOCK.unlink()
-                except OSError:
-                    pass
-                fd = None
-            raise
+        except (OSError, ValueError):
+            pass
+        if _now() > end:
+            raise TimeoutError("jobs.lock timeout")
+        time.sleep(0.02)
     try:
         yield
     finally:
@@ -211,7 +236,11 @@ def jobs_lock(timeout: float = 10.0):
             except OSError:
                 pass
             try:
-                JOBS_LOCK.unlink()
+                # Only unlink our own lock: another process may have created a
+                # new one while we were finishing (the old code could delete it).
+                cur = JOBS_LOCK.read_text(encoding="utf-8", errors="replace").strip()
+                if cur == owner:
+                    JOBS_LOCK.unlink()
             except OSError:
                 pass
 
@@ -275,12 +304,35 @@ def alive(pid) -> bool:
     if not pid:
         return False
     try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if os.name == "nt":
+        # OpenProcess/GetExitCodeProcess is ~100x faster than spawning
+        # `tasklist`; poll() calls this for every running job.
+        try:
+            import ctypes
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            h = k.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+            if not h:
+                return ctypes.get_last_error() == 5  # ACCESS_DENIED => exists
+            try:
+                code = ctypes.c_ulong()
+                if not k.GetExitCodeProcess(h, ctypes.byref(code)):
+                    return True
+                return code.value == 259  # STILL_ACTIVE
+            finally:
+                k.CloseHandle(h)
+        except Exception:
+            pass
+    try:
         if os.name == "nt":
             out = subprocess.run(
                 ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
                 capture_output=True,
                 text=True,
                 timeout=5,
+                creationflags=NO_WINDOW,
             ).stdout
             return str(pid) in out
         os.kill(int(pid), 0)
@@ -294,7 +346,8 @@ def kill_tree(pid) -> None:
         return
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=10)
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
+                           timeout=10, creationflags=NO_WINDOW)
         else:
             os.killpg(os.getpgid(int(pid)), signal.SIGKILL)
     except Exception:
@@ -543,13 +596,14 @@ def _maybe_auto_recon(j: dict) -> None:
     explicit `NEED_RECON` / `STALLED` signal, with a per-job marker to avoid
     loops.
     """
-    if not AUTO_RECON:
+    if not AUTO_RECON or triage_active():
         return
     if str(j.get("agent") or "") != "exploit":
         return
     if j.get("status") not in ("done", "error", "orphaned"):
         return
-    if _now() - float(j.get("created") or 0) > RECON_WINDOW_S:
+    stamp = float(j.get("ended") or j.get("created") or 0)
+    if _now() - stamp > RECON_WINDOW_S:
         return
     text = str(j.get("text") or "")
     if "NEED_RECON" not in text and "STALLED" not in text:
@@ -611,6 +665,10 @@ def _run(job_id: str) -> int:
         return 1
     if not j:
         return 1
+    if str(j.get("status") or "") != "queued":
+        # cancel()/reap() may have marked this job before the supervisor
+        # started; never resurrect a cancelled worker.
+        return 0
     code, agent, task = str(j["code"]), str(j["agent"]), str(j["task"])
     tdir = TEAMS / code
     tdir.mkdir(parents=True, exist_ok=True)
@@ -633,6 +691,8 @@ def _run(job_id: str) -> int:
     cmd += ["-p", "--mode", "json", "--no-session", "--no-mcp", "-ne"]
     if GUARD.exists():
         cmd += ["-e", str(GUARD)]
+    if WORKER_GUARD.exists():
+        cmd += ["-e", str(WORKER_GUARD)]
     cmd += [
         "--tools", "read,bash,write,edit",
         "--thinking", os.environ.get("TEAM_THINKING", "high"),
@@ -641,9 +701,15 @@ def _run(job_id: str) -> int:
         "Task: " + task,
     ]
     env = os.environ.copy()
-    for k in ("BENCHMARK_TOKEN", "BENCHMARK_BASE_URL", "TSEC_TOKEN"):
-        env.pop(k, None)
+    for k in list(env):
+        if k.startswith("CTFY_") or k in (
+            "BENCHMARK_TOKEN", "BENCHMARK_BASE_URL", "BENCHMARK_TASK_ID",
+            "TSEC_TOKEN", "TSEC_BASE_URL",
+        ):
+            env.pop(k, None)
     env["TEAM_WORKER"] = "1"
+    env["TEAM_WORKER_JOB"] = job_id
+    env["TEAM_BOX_DIR"] = str(tdir)
     timeout = float(j.get("timeout") or DEFAULT_JOB_TIMEOUT)
     log = tdir / f"{job_id}.log"
     started_at = _now()
@@ -658,6 +724,7 @@ def _run(job_id: str) -> int:
                 env=env,
                 cwd=str(tdir),
                 start_new_session=True,
+                creationflags=NO_WINDOW,
             )
             update_job(job_id, child_pid=p.pid)
             try:
@@ -692,6 +759,7 @@ def _run(job_id: str) -> int:
 
 
 def dispatch(code: str, agent: str, task: str, timeout: float = 0) -> int:
+    code = _valid_code(code)
     if os.environ.get("TEAM_WORKER") == "1" and os.environ.get("TEAM_ALLOW_WORKER_DISPATCH") != "1":
         print("[team] workers may not dispatch more workers", file=sys.stderr)
         return 0
@@ -718,6 +786,9 @@ def dispatch(code: str, agent: str, task: str, timeout: float = 0) -> int:
                 for j in all_running
                 if j.get("code") == code
             ]
+            if triage_active() and len(running) >= 1 and os.environ.get("TEAM_ALLOW_TRIAGE_DISPATCH") != "1":
+                print(f"[team] {code}: triage active; 1 worker/box cap")
+                return 0
             if len(running) >= MAX_PER_BOX:
                 print(f"[team] {code} already has {len(running)} running (cap {MAX_PER_BOX})")
                 return 0
@@ -741,6 +812,7 @@ def dispatch(code: str, agent: str, task: str, timeout: float = 0) -> int:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            creationflags=NO_WINDOW,
         )
     except Exception as exc:  # noqa: BLE001
         update_job(jid, status="error", error=f"spawn failed: {exc}", ended=_now())
@@ -755,7 +827,6 @@ def poll(wait: float = 0) -> int:
     end = _now() + max(0.0, float(wait or 0))
     while True:
         changed = False
-        backfill_since = 0.0
         try:
             with jobs_lock():
                 d = load_jobs()
@@ -766,22 +837,29 @@ def poll(wait: float = 0) -> int:
                     # the enforcer can still manage it.
                     if st in ("running", "queued"):
                         code = str(j.get("code") or "")
-                        if code and str(j.get("created") or 0):
+                        created = float(j.get("created") or 0)
+                        if code and created and _now() - created <= BACKFILL_MAX_AGE:
                             tdir = TEAMS / code
                             try:
-                                tdir.mkdir(parents=True, exist_ok=True)
                                 op = tdir / "opened_at"
                                 if not op.exists():
-                                    created = float(j.get("created"))
-                                    op.write_text(str(created), encoding="utf-8")
-                                    # A running job means the box is open; stale
-                                    # close markers would hide it from the enforcer.
-                                    for stale in ("closed", "reaped.json"):
+                                    closed_ts = 0.0
+                                    for marker in ("closed", "reaped.json"):
                                         try:
-                                            (tdir / stale).unlink()
+                                            closed_ts = max(closed_ts, (tdir / marker).stat().st_mtime)
                                         except OSError:
                                             pass
-                                    backfill_since = min(backfill_since or created, created)
+                                    # Only resurrect when the job started after
+                                    # the last close; a stale job from an older
+                                    # run must not reopen a finished box.
+                                    if created > closed_ts + 5:
+                                        tdir.mkdir(parents=True, exist_ok=True)
+                                        op.write_text(str(created), encoding="utf-8")
+                                        for stale in ("closed", "reaped.json"):
+                                            try:
+                                                (tdir / stale).unlink()
+                                            except OSError:
+                                                pass
                             except OSError:
                                 pass
                     if st == "running":
@@ -812,12 +890,22 @@ def poll(wait: float = 0) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"[team] poll: {exc}", file=sys.stderr)
             return 1
-        # Opt-in: a plain `team_poll` should not start a closing daemon as a
-        # side effect. adopt() starts it for new boxes; set TEAM_ENFORCE_POLL=1
-        # to also start it when opened_at was backfilled from a running job.
-        if (backfill_since and not triage_active()
-                and os.environ.get("TEAM_ENFORCE_POLL", "0") == "1"):
-            _ensure_enforcer(backfill_since)
+        # Start the watchdog for existing opened boxes too. Without this, boxes
+        # created before the enforcer existed never get a close timer. Set
+        # TEAM_ENFORCE_POLL=0 to keep poll read-only.
+        if not triage_active() and os.environ.get("TEAM_ENFORCE_POLL", "1") != "0":
+            try:
+                open_ts = []
+                for tdir in TEAMS.iterdir():
+                    if not tdir.is_dir() or not (tdir / "opened_at").exists():
+                        continue
+                    if (tdir / "closed").exists() or (tdir / "reaped.json").exists():
+                        continue
+                    open_ts.append(_read_float(tdir / "opened_at", 0.0))
+                if open_ts and Api().ok():
+                    _ensure_enforcer(min(open_ts))
+            except OSError:
+                pass
 
         # Recover text/candidates outside the lock (logs can be multi-MB).
         try:
@@ -834,6 +922,7 @@ def poll(wait: float = 0) -> int:
                             recovered=True,
                             text=j.get("text") or "",
                         )
+                    if j.get("text"):
                         _maybe_auto_recon(j)
         except Exception as exc:  # noqa: BLE001
             print(f"[team] poll/recover: {exc}", file=sys.stderr)
@@ -908,7 +997,10 @@ def _latest_candidate() -> str | None:
                 if any((x.parent / n).exists() for n in ("closed", "reaped.json")):
                     continue
                 opened = _read_float(x.parent / "opened_at", 0.0)
+                age = _now() - x.stat().st_mtime
                 if opened and x.stat().st_mtime < opened - 5:
+                    continue
+                if not opened and age > CANDIDATE_MAX_AGE:
                     continue
                 cands.append(x)
             except OSError:
@@ -926,7 +1018,10 @@ def _latest_candidate() -> str | None:
                     if any((p.parent / n).exists() for n in ("closed", "reaped.json")):
                         continue
                     opened = _read_float(p.parent / "opened_at", 0.0)
+                    age = _now() - p.stat().st_mtime
                     if opened and p.stat().st_mtime < opened - 5:
+                        continue
+                    if not opened and age > CANDIDATE_MAX_AGE:
                         continue
                     text = p.read_text(encoding="utf-8", errors="replace")
                     # Only an explicit marker is a curated candidate; raw
@@ -969,6 +1064,11 @@ def _last_primitive(tdir: Path, opened: float) -> float:
     return latest
 
 
+def _abandoned(tdir: Path) -> bool:
+    """Partial multi-flag boxes need an explicit run_gate abandonment."""
+    return (tdir / "abandon.json").exists()
+
+
 def _local_flags(tdir: Path) -> int:
     n = 0
     try:
@@ -977,6 +1077,14 @@ def _local_flags(tdir: Path) -> int:
                 n = max(n, len(flags_in(p.read_text(encoding="utf-8", errors="replace"))))
             except OSError:
                 continue
+        # Raw flags / worker summaries are still evidence: never treat a box
+        # with a flag-like string as 0-flag and stall-close it.
+        for pat in ("flaglike-*.txt", "result-*.md", "worker-*.md"):
+            for p in tdir.glob(pat):
+                try:
+                    n = max(n, len(flags_in(p.read_text(encoding="utf-8", errors="replace"))))
+                except OSError:
+                    continue
         # The main agent may have written the flag in notes instead of a
         # candidate file. Count it so the enforcer does not stall-close a
         # partially solved box.
@@ -1052,11 +1160,19 @@ def _close_box(code: str, reason: str, api: Api | None = None,
         cur = _read_float(tdir / "opened_at", 0.0)
         if abs(cur - expected_opened) > 0.5:
             print(f"[enforce] {code}: skip close (box re-opened); not touching the new instance")
+            try:
+                pending.unlink()
+            except OSError:
+                pass
             return False
     if expected_lastp is not None:
         curp = _last_primitive(tdir, expected_opened or 0.0)
         if curp > expected_lastp + 1.0:
             print(f"[enforce] {code}: skip close (new primitive arrived)")
+            try:
+                pending.unlink()
+            except OSError:
+                pass
             return False
     _ensure_note(code, reason)
     try:
@@ -1067,6 +1183,10 @@ def _close_box(code: str, reason: str, api: Api | None = None,
         if expected_opened is not None and abs(cur - expected_opened) > 0.5:
             print(f"[enforce] {code}: closed the old instance, but the code was re-opened; "
                   "not marking closed/cancelling new jobs")
+            try:
+                pending.unlink()  # old failed-close record; adopt() may have cleared it
+            except OSError:
+                pass
             return True
         _mark_closed(code)
         try:
@@ -1100,9 +1220,11 @@ def _enforce_once(close: bool = False, since: float = 0.0, include_notes: bool =
     now = _now()
     api = Api()
     rows: list = []
+    catalog_ok = False
     if api.ok():
         try:
             rows = api.challenges()
+            catalog_ok = True
         except Exception as exc:  # noqa: BLE001
             print(f"[enforce] catalog failed: {exc}")
     catalog = {str(c.get("unique_code")): c for c in rows if isinstance(c, dict)}
@@ -1137,7 +1259,7 @@ def _enforce_once(close: bool = False, since: float = 0.0, include_notes: bool =
             continue
         ch = catalog.get(code) or {}
         total = int(ch.get("flag_total") or ch.get("flag_count") or ch.get("total_flags") or 0)
-        platform_got = int(ch.get("solved_flags") or ch.get("user_flags") or 0)
+        platform_got = int(ch.get("solved_flags") or ch.get("solved_flag_count") or ch.get("flag_solved") or ch.get("user_flags") or 0)
         got = max(_local_flags(tdir), platform_got)
         # Local candidate files are NOT completion evidence: a worker may find a
         # flag that the main has not submitted yet. Only is_completed or the
@@ -1170,10 +1292,17 @@ def _enforce_once(close: bool = False, since: float = 0.0, include_notes: bool =
                     action, reason = "close", "completed (is_completed=true)"
             else:
                 hard = TIER_HARD.get(str(ch.get("difficulty") or "medium").lower(), TIER_HARD["medium"])
-                if age >= hard and (got == 0 or total > 0):
+                # A box with flags and a known total is never auto-closed at the
+                # tier hard cap: keep hunting the remaining flags until it is
+                # completed, or until run_gate records an explicit abandonment
+                # (fresh stall note / env-fail / user approval). 0-flag boxes
+                # still follow the normal tier/stall rules.
+                if age >= hard and got == 0 and catalog_ok:
                     action, reason = "close", f"hard deadline {int(age)}s>={hard}s"
                 elif got == 0 and now - lastp >= STALL_CLOSE_S:
                     action, reason = "close", f"stall {int(now - lastp)}s>={int(STALL_CLOSE_S)}s without a primitive"
+                elif got > 0 and total > 0 and _abandoned(tdir):
+                    action, reason = "close", "abandoned with evidence (partial flags)"
                 elif got > 0 and total <= 0 and now - lastp >= SOLVED_HOLD_S:
                     action, reason = "close", f"solved-hold {int(now - lastp)}s>={int(SOLVED_HOLD_S)}s, flag_total unknown"
         if not action:
@@ -1194,6 +1323,7 @@ def _enforce_once(close: bool = False, since: float = 0.0, include_notes: bool =
 
 
 def hold_box(code: str, reason: str = "") -> int:
+    code = _valid_code(code)
     if os.environ.get("TEAM_WORKER") == "1":
         return 1
     tdir = TEAMS / code
@@ -1204,6 +1334,7 @@ def hold_box(code: str, reason: str = "") -> int:
 
 
 def unhold_box(code: str) -> int:
+    code = _valid_code(code)
     if os.environ.get("TEAM_WORKER") == "1":
         return 1
     try:
@@ -1283,6 +1414,7 @@ def _ensure_enforcer(since: float) -> None:
                 stdout=f,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                creationflags=NO_WINDOW,
             )
         pidfile.write_text(str(p.pid), encoding="utf-8")
         print(f"[team] enforcer started pid={p.pid}; manages boxes opened >= {since:.0f}")
@@ -1298,11 +1430,8 @@ def _stall_code() -> str | None:
                 continue
             opened = _read_float(tdir / "opened_at", 0.0)
             if not opened:
-                try:
-                    opened = (tdir / "notes.md").stat().st_mtime
-                except OSError:
-                    opened = 0.0
-            if not opened:
+                # opened_at is the canonical "currently open" marker. Notes-only
+                # boxes are handled by `enforce --include-notes`, not clock STALL.
                 continue
             if any((tdir / n).exists() for n in ("closed", "reaped.json")):
                 continue
@@ -1336,6 +1465,8 @@ def _recon_code() -> str | None:
                         continue
                     if opened and p.stat().st_mtime < opened - 5:
                         continue
+                    if not opened and _now() - p.stat().st_mtime > CANDIDATE_MAX_AGE:
+                        continue
                     if "NEED_RECON" in p.read_text(encoding="utf-8", errors="replace"):
                         return tdir.name
                 except OSError:
@@ -1357,7 +1488,10 @@ def _latest_flaglike() -> str | None:
                 if any((x.parent / n).exists() for n in ("closed", "reaped.json")):
                     continue
                 opened = _read_float(x.parent / "opened_at", 0.0)
+                age = _now() - x.stat().st_mtime
                 if opened and x.stat().st_mtime < opened - 5:
+                    continue
+                if not opened and age > CANDIDATE_MAX_AGE:
                     continue
                 cands.append(x)
             except OSError:
@@ -1429,6 +1563,7 @@ def ensure_triage_card(code: str, reason: str, opened: float = 0.0) -> None:
 
 
 def _reap(code: str, delay: float, token: str) -> int:
+    code = _valid_code(code)
     if os.environ.get("TEAM_WORKER") == "1":
         return 1
     time.sleep(max(1.0, float(delay)))
@@ -1445,6 +1580,37 @@ def _reap(code: str, delay: float, token: str) -> int:
         except (ValueError, OSError):
             scheduled = opened = 0.0
         if scheduled and opened and abs(scheduled - opened) > 0.5:
+            return 0
+        # Early `triage_gate.py done` or a new triage phase must cancel the
+        # old 120s timer; otherwise A->B work is killed at the probe deadline.
+        st = triage_state()
+        if st.get("done"):
+            print(f"[team] triage: {code} done/closed early; reaper stands down")
+            try:
+                if tf.read_text(encoding="utf-8").strip() == token:
+                    tf.unlink()
+            except OSError:
+                pass
+            return 0
+        try:
+            started = float(st.get("started") or 0)
+        except (TypeError, ValueError):
+            started = 0.0
+        if started and scheduled and started > scheduled + 0.5:
+            print(f"[team] triage: {code} belongs to a previous phase; reaper stands down")
+            try:
+                if tf.read_text(encoding="utf-8").strip() == token:
+                    tf.unlink()
+            except OSError:
+                pass
+            return 0
+        if (TEAMS / code / ".hold").exists():
+            print(f"[team] triage: {code} is held; reaper stands down")
+            try:
+                if tf.read_text(encoding="utf-8").strip() == token:
+                    tf.unlink()
+            except OSError:
+                pass
             return 0
     except OSError:
         return 0
@@ -1497,6 +1663,7 @@ def _reap(code: str, delay: float, token: str) -> int:
 
 
 def adopt(code: str, addr: str) -> int:
+    code = _valid_code(code)
     if os.environ.get("TEAM_WORKER") == "1":
         print("[team] workers may not adopt/start boxes", file=sys.stderr)
         return 1
@@ -1523,7 +1690,8 @@ def adopt(code: str, addr: str) -> int:
         return 0
     # A re-open must clear old close/watchdog markers, otherwise the next
     # enforcer pass skips the new instance as already closed.
-    for name in ("closed", "reaped.json", "enforce.json", "close_pending"):
+    for name in ("closed", "reaped.json", "enforce.json", "close_pending",
+                 "abandon.json", "env_fail.json"):
         try:
             (tdir / name).unlink()
         except OSError:
@@ -1537,9 +1705,17 @@ def adopt(code: str, addr: str) -> int:
     # First box of a run: start the 30-minute triage phase automatically unless
     # explicitly disabled. Without this, forgetting `triage_gate.py start`
     # silently disables the triage guard.
-    if not triage_state() and os.environ.get("TBENCH_TRIAGE", "1") != "0":
+    st = triage_state()
+    try:
+        phase_end = float(st.get("phase_end") or 0)
+    except (TypeError, ValueError):
+        phase_end = 0.0
+    stale = bool(phase_end) and _now() - phase_end > TRIAGE_RESTART_AFTER
+    need_triage = (not st) or bool(st.get("done")) or stale
+    if need_triage and os.environ.get("TBENCH_TRIAGE", "1") != "0":
         try:
-            subprocess.run([PY, str(TRIAGE_GATE), "start"], capture_output=True, timeout=10)
+            subprocess.run([PY, str(TRIAGE_GATE), "start"], capture_output=True, timeout=10,
+                           creationflags=NO_WINDOW)
         except Exception:
             pass
     if addr:
@@ -1558,6 +1734,7 @@ def adopt(code: str, addr: str) -> int:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                creationflags=NO_WINDOW,
             )
         except Exception as exc:  # noqa: BLE001
             try:
@@ -1587,7 +1764,153 @@ def adopt(code: str, addr: str) -> int:
     return 0
 
 
+def _schedule_reaper(code: str, opened: float) -> None:
+    """Schedule the triage 120s close for a tracked box (no dispatch)."""
+    if not triage_active():
+        return
+    tdir = TEAMS / code
+    if (tdir / "reap_token").exists():
+        return
+    delay = float(triage_state().get("probe") or TRIAGE_PROBE)
+    token = f"{opened:.3f}-{random.randint(1000, 9999)}"
+    try:
+        (tdir / "reap_token").write_text(token, encoding="utf-8")
+        subprocess.Popen(
+            [PY, str(Path(__file__).resolve()), "_reap", code, str(delay), token],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            creationflags=NO_WINDOW,
+        )
+        print(f"[team] TRIAGE {code}: close in {delay:g}s (tracked)")
+    except Exception as exc:  # noqa: BLE001
+        try:
+            (tdir / "reap_token").unlink()
+            (tdir / "reap_error.txt").write_text(f"track spawn failed: {exc}", encoding="utf-8")
+        except OSError:
+            pass
+
+
+def track(code: str, addr: str) -> int:
+    """Record a box started outside team_pool (e.g. tsec.py/framework/curl).
+
+    No dispatch. Same addr on an already-open box only refreshes addr.txt;
+    a new addr resets opened_at and clears stale close markers.
+    """
+    if os.environ.get("TEAM_WORKER") == "1":
+        print("[team] workers may not track boxes", file=sys.stderr)
+        return 1
+    if not code or not addr:
+        return 1
+    code = _valid_code(code)
+    tdir = TEAMS / code
+    tdir.mkdir(parents=True, exist_ok=True)
+    old_addr = ""
+    try:
+        old_addr = (tdir / "addr.txt").read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+    opened = _read_float(tdir / "opened_at", 0.0)
+    already = opened and not (tdir / "closed").exists() and not (tdir / "reaped.json").exists()
+    if already and str(addr).strip() == old_addr:
+        if triage_active():
+            _schedule_reaper(code, opened)
+        else:
+            _ensure_enforcer(opened or _now())
+        return 0
+    reopened = bool(already and old_addr and str(addr).strip() != old_addr)
+    if not already or reopened:
+        # New/re-opened instance: clear stale close/watchdog markers.
+        for name in ("closed", "reaped.json", "enforce.json", "close_pending",
+                     "abandon.json", "env_fail.json"):
+            try:
+                (tdir / name).unlink()
+            except OSError:
+                pass
+        if not triage_active():
+            try:
+                (tdir / "reap_token").unlink()
+            except OSError:
+                pass
+    (tdir / "addr.txt").write_text(str(addr), encoding="utf-8")
+    if not already or reopened or opened == 0:
+        opened = _now()
+        (tdir / "opened_at").write_text(str(opened), encoding="utf-8")
+    if triage_active():
+        _schedule_reaper(code, opened or _now())
+    else:
+        _ensure_enforcer(opened or _now())
+    print(f"[team] tracked {code} at {addr}" + ("" if not already else " (refreshed)"))
+    return 0
+
+
+def _http_body(exc) -> tuple[str, str]:
+    try:
+        raw = exc.read().decode("utf-8", "replace")
+        data = json.loads(raw)
+        return str(data.get("code") or ""), str(data.get("message") or raw)
+    except Exception:
+        return "", str(exc)
+
+
+def reconcile() -> int:
+    """Clear local open markers when the platform says the task is finished.
+
+    This does NOT call close (the platform task is over); it only stops the
+    local doctor/panel from showing stale opened boxes forever.
+    """
+    api = Api()
+    if not api.ok():
+        print("[team] reconcile: no BENCHMARK/TSEC base+token", file=sys.stderr)
+        return 2
+    try:
+        api.challenges()
+    except urllib.error.HTTPError as exc:
+        code, msg = _http_body(exc)
+        if code in ("invalid_state", "task_not_found") or "finished" in msg.lower():
+            n = 0
+            closed_codes: list[str] = []
+            try:
+                dirs = list(TEAMS.iterdir())
+            except OSError:
+                dirs = []
+            for tdir in dirs:
+                if not tdir.is_dir() or not (tdir / "opened_at").exists():
+                    continue
+                if (tdir / "closed").exists() or (tdir / "reaped.json").exists():
+                    continue
+                _mark_closed(tdir.name)
+                try:
+                    (tdir / "reconciled.json").write_text(
+                        json.dumps({"at": _now(), "reason": msg, "code": code}, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    pass
+                closed_codes.append(tdir.name)
+                n += 1
+            for _code in closed_codes:
+                try:
+                    cancel(_code)
+                except Exception:
+                    pass
+            print(f"[team] platform task finished; marked {n} local open box(es) closed")
+            return 0
+        print(f"[team] reconcile failed: {code} {msg}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        print(f"[team] reconcile failed: {exc}", file=sys.stderr)
+        return 1
+    print("[team] reconcile: platform task is live; no local changes")
+    return 0
+
+
 def _oldest_open() -> str | None:
+    """Oldest box that is safe to evict on 409.
+
+    Only a 0-flag box or an explicitly abandoned box may be auto-closed here;
+    evicting a partial multi-flag box would silently lose the remaining flags.
+    """
     best = None
     try:
         for tdir in TEAMS.iterdir():
@@ -1598,6 +1921,8 @@ def _oldest_open() -> str | None:
                 continue
             if any((tdir / n).exists() for n in ("closed", "reaped.json", ".hold")):
                 continue
+            if _local_flags(tdir) > 0 and not _abandoned(tdir):
+                continue
             if best is None or opened < best[0]:
                 best = (opened, tdir.name)
     except OSError:
@@ -1606,6 +1931,7 @@ def _oldest_open() -> str | None:
 
 
 def api_start(code: str) -> int:
+    code = _valid_code(code)
     if os.environ.get("TEAM_WORKER") == "1":
         print("[team] workers may not start boxes", file=sys.stderr)
         return 3
@@ -1626,9 +1952,11 @@ def api_start(code: str) -> int:
             if exc.code == 409 and attempt == 0:
                 victim = _oldest_open()
                 if victim:
-                    print(f"[team] 409 max active; closing oldest {victim}")
+                    print(f"[team] 409 max active; closing oldest safe box {victim}")
                     _close_box(victim, "409 max active", api)
                     continue
+                print("[team] 409 max active; no 0-flag/abandoned box to evict "
+                      "(partial boxes need an explicit run_gate abandonment)", file=sys.stderr)
             print(f"[team] start failed: HTTP {exc.code}", file=sys.stderr)
             return 3
         except Exception as exc:  # noqa: BLE001
@@ -1652,6 +1980,7 @@ def api_start(code: str) -> int:
 
 
 def api_close(code: str) -> int:
+    code = _valid_code(code)
     if os.environ.get("TEAM_WORKER") == "1":
         print("[team] workers may not close boxes", file=sys.stderr)
         return 1
@@ -1675,6 +2004,145 @@ def api_close(code: str) -> int:
         return 1
 
 
+def doctor() -> int:
+    """Print what is actually active: extension version, token, enforcer, ledgers."""
+    print("team_pool: 2026-11-20 (jobs lock+backup, per-job artifacts, enforcer, candidates, worker guards)")
+    base = bool(os.environ.get("BENCHMARK_BASE_URL") or os.environ.get("TSEC_BASE_URL"))
+    token = bool(os.environ.get("BENCHMARK_TOKEN") or os.environ.get("TSEC_TOKEN"))
+    print(f"platform env: base={base} token={token}"
+          + ("" if base and token else "  -> close/start/enforcer auto-close are INERT"))
+    # The marker is written at session_start; a child pi inherits PI_SESSION_ID,
+    # so this is only advisory. The authoritative signal is the tool-result
+    # footer: it must contain "ext 2026-11-20.3".
+    sid = os.environ.get("PI_SESSION_ID") or ""
+    ext = TEAMS / f".team-pool-ext-{sid}" if sid else None
+    if ext and ext.exists():
+        try:
+            print("extension marker (advisory, may be a child):", ext.read_text(encoding="utf-8").strip())
+        except OSError:
+            print("extension marker: unreadable")
+    else:
+        print("extension marker: MISSING for this session id")
+    print("extension authoritative check: tool-result footer must contain 'ext 2026-11-20.3'")
+    try:
+        others = sorted(TEAMS.glob(".team-pool-ext-*"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if others:
+            print("extension marker latest:", others[0].read_text(encoding="utf-8", errors="replace").strip())
+    except OSError:
+        pass
+    try:
+        s = json.loads(TRIAGE.read_text(encoding="utf-8"))
+        active = bool(s) and not s.get("done") and _now() < float(s.get("phase_end") or 0)
+        print(f"triage: done={s.get('done')} active={active} cards={len(s.get('cards') or {})}")
+    except Exception:
+        print("triage: no state")
+    try:
+        d = load_jobs()
+        jobs = list(d.get("jobs", {}).values())
+        from collections import Counter
+        print("jobs:", len(jobs), dict(Counter(str(j.get("status")) for j in jobs)))
+    except Exception as e:  # noqa: BLE001
+        print("jobs: unreadable", e)
+    try:
+        live = 0
+        try:
+            for tdir in TEAMS.iterdir():
+                if (tdir / "opened_at").exists() and not (tdir / "closed").exists() and not (tdir / "reaped.json").exists():
+                    live += 1
+        except OSError:
+            pass
+        print("boxes: opened_at=%d live_open=%d closed=%d reaped=%d reap_token=%d hold=%d" % (
+            len(list(TEAMS.glob("*/opened_at"))), live, len(list(TEAMS.glob("*/closed"))),
+            len(list(TEAMS.glob("*/reaped.json"))), len(list(TEAMS.glob("*/reap_token"))),
+            len(list(TEAMS.glob("*/.hold")))))
+    except OSError:
+        pass
+    pf = TEAMS / "enforce.pid"
+    try:
+        pid = int(pf.read_text(encoding="utf-8").strip())
+        print(f"enforcer: pid={pid} alive={alive(pid)}")
+    except (OSError, ValueError):
+        print("enforcer: not running")
+    print("clock:", clock())
+    print("rules at risk:")
+    if not (base and token):
+        print("  - platform actions are inert (no base/token)")
+    has_ext = (TEAMS / f".team-pool-ext-{sid}").exists() if sid else False
+    if not has_ext:
+        print("  - extension likely old in this session (footer without ext 2026-11-20.3)")
+    print(f"  - READ_GUARD={os.environ.get('READ_GUARD', 'block')} LOOP_GUARD={os.environ.get('LOOP_GUARD', 'block')}")
+    if not WORKER_GUARD.exists():
+        print("  - worker-guard missing: worker rate/flag-scan enforcement is OFF")
+    cp = len(list(TEAMS.glob("*/close_pending"))) if TEAMS.is_dir() else 0
+    if cp:
+        print(f"  - {cp} close_pending record(s); run `enforce --close` with token to retry")
+    try:
+        d = load_jobs()
+        jobs = list(d.get("jobs", {}).values())
+        running = [j for j in jobs if j.get("status") in ("running", "queued")]
+        if len(running) > MAX_TOTAL:
+            print(f"  - total workers {len(running)} > {MAX_TOTAL}")
+        per = {}
+        for j in running:
+            per[j.get("code")] = per.get(j.get("code"), 0) + 1
+        for code, n in per.items():
+            if n > MAX_PER_BOX:
+                print(f"  - {code}: {n} workers > {MAX_PER_BOX}")
+    except Exception:
+        pass
+    now = _now()
+    # Surface recent result/candidate files without an opened_at marker; these
+    # are boxes started outside team_pool that track/adopt missed.
+    for tdir in sorted(TEAMS.iterdir()) if TEAMS.is_dir() else []:
+        if not tdir.is_dir() or (tdir / "opened_at").exists():
+            continue
+        if (tdir / "closed").exists() or (tdir / "reaped.json").exists():
+            continue
+        files = list(tdir.glob("candidate*")) + list(tdir.glob("worker-*")) + list(tdir.glob("result*"))
+        recent = False
+        for f in files:
+            try:
+                if now - f.stat().st_mtime < 7200:
+                    recent = True
+                    break
+            except OSError:
+                continue
+        if recent:
+            print(f"  - {tdir.name}: untracked recent result/candidate; run track <code> <addr>")
+    for tdir in sorted(TEAMS.iterdir()) if TEAMS.is_dir() else []:
+        if not tdir.is_dir() or not (tdir / "opened_at").exists():
+            continue
+        if (tdir / "closed").exists() or (tdir / "reaped.json").exists():
+            continue
+        code = tdir.name
+        try:
+            opened = _read_float(tdir / "opened_at", 0.0)
+            lastp = _last_primitive(tdir, opened)
+            idle = now - lastp
+            if idle > STALL_CLOSE_S / 2:
+                print(f"  - {code}: no primitive for {int(idle)}s (stall closes at {int(STALL_CLOSE_S)}s)")
+            if not (tdir / "addr.txt").exists():
+                print(f"  - {code}: no addr.txt (track the container addr)")
+            if not (tdir / "notes.md").exists():
+                print(f"  - {code}: no notes.md")
+            if _local_flags(tdir) > 0:
+                print(f"  - {code}: candidate/flag present; verify and submit before closing")
+            if (tdir / ".hold").exists():
+                print(f"  - {code}: held; enforcer will skip it")
+        except OSError:
+            continue
+    if DEFAULT_JOB_TIMEOUT > STALL_CLOSE_S:
+        print(f"  - TEAM_JOB_TIMEOUT={int(DEFAULT_JOB_TIMEOUT)}s > STALL_CLOSE_S={int(STALL_CLOSE_S)}s: "
+              "long worker needs hold/notes")
+    try:
+        s = json.loads(TRIAGE.read_text(encoding="utf-8"))
+        if s.get("done"):
+            print("  - triage is done; a NEW run must call triage_gate.py start explicitly")
+    except Exception:
+        pass
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1687,6 +2155,7 @@ def main() -> int:
     p.add_argument("--wait", type=float, default=0)
     c = sub.add_parser("cancel")
     c.add_argument("target", nargs="?")
+    tr = sub.add_parser("track"); tr.add_argument("code"); tr.add_argument("addr")
     a = sub.add_parser("adopt")
     a.add_argument("code")
     a.add_argument("addr", nargs="?", default="")
@@ -1695,8 +2164,10 @@ def main() -> int:
     cl = sub.add_parser("close")
     cl.add_argument("code")
     sub.add_parser("clock")
+    sub.add_parser("doctor")
     h = sub.add_parser("hold"); h.add_argument("code"); h.add_argument("reason", nargs="?", default="")
     uh = sub.add_parser("unhold"); uh.add_argument("code")
+    sub.add_parser("reconcile")
     sub.add_parser("panic")
     en = sub.add_parser("enforce")
     en.add_argument("--watch", action="store_true")
@@ -1717,6 +2188,8 @@ def main() -> int:
         return poll(x.wait)
     if x.cmd == "cancel":
         return cancel(x.target)
+    if x.cmd == "track":
+        return track(x.code, x.addr)
     if x.cmd == "adopt":
         return adopt(x.code, x.addr)
     if x.cmd == "start":
@@ -1726,15 +2199,22 @@ def main() -> int:
     if x.cmd == "clock":
         print(clock())
         return 0
+    if x.cmd == "doctor":
+        return doctor()
     if x.cmd == "hold":
         return hold_box(x.code, x.reason)
     if x.cmd == "unhold":
         return unhold_box(x.code)
+    if x.cmd == "reconcile":
+        return reconcile()
     if x.cmd == "panic":
         return panic_teams()
     if x.cmd == "enforce":
         if os.environ.get("TEAM_WORKER") == "1":
             print("[team] workers may not run the enforcer", file=sys.stderr)
+            return 1
+        if x.close and not Api().ok():
+            print("[enforce] --close requested but BENCHMARK/TSEC base+token are not set; refusing to pretend", file=sys.stderr)
             return 1
         if x.watch:
             return _enforce_loop(x.close, x.since, x.max_seconds, x.include_notes)

@@ -23,7 +23,7 @@ proof-of-concept: no
 
 > `nc chall.pwnable.tw 10406`
 >
-> Flag: `flag{REDACTED}`
+> Flag: `FLAG{C4ptur3_th3_Fl4g_c4ptuR3_the_f00d}`
 
 ## Challenge Overview
 

@@ -76,7 +76,7 @@ team_cancel(job_id | unique_code)
 - 180s 第二 flag 窗口只作“flag_total 未知/单 flag 平台”的兜底；
 - worker 只写 `FLAG_CANDIDATE`；主控去重、第二路径复核、带 `verified:true` 提交；
 - duplicate = 已计分，不是关箱理由（多 flag 继续）；
-- close 非 404 失败：**保留 owned、退避重试**；不要先删本地（否则箱子空挂到超时）；
+- close 非 404 失败：**保留 owned、退避重试**；不要先删本地（tch3-05 71min）；
 - 模型可能用 raw curl 交 flag：adapter 应轮询平台 `is_completed`，true 就关。
 
 ## 6. 讨论与黑板
@@ -92,8 +92,8 @@ team_cancel(job_id | unique_code)
 
 - 15 分钟无新原语 → 笔记 + close；
 - tier hard：easy 10、medium 20、hard 60；`touch` 一次延长（medium +10、hard +30）；
-- 完成（`is_completed`/`flag_total`）→ 10s 关；有 flag 未完成 → 已知 total 走 tier hard、
-  未知 600s 兜底；主动 close 优先；
+- 完成（`is_completed`/`flag_total`）→ 10s 关；有 flag 未完成 → 已知 total 只有
+  abandon/approval 才允许 close，未知 total 走 600s solved-hold；主动 close 优先；
 - 最后 45 分钟不开新侦察；
 - 3 容器上限；409 先关最老的。
 

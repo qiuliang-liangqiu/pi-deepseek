@@ -253,7 +253,10 @@ def launch(code, note, extra_env=None, smoke=False):
     fh = open(log, "a", encoding="utf-8", errors="replace")
     fh.write(f"\n===== {time.strftime('%H:%M:%S')} launch {code} =====\n")
     fh.flush()
-    flags = 0x00000008 if os.name == "nt" else 0  # DETACHED_PROCESS
+    # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP: the worker must NOT get a
+    # fresh console (DETACHED_PROCESS made Win11/WT pop a terminal window
+    # per worker) but must survive the dispatcher exiting.
+    flags = 0x08000000 | 0x00000200 if os.name == "nt" else 0
     proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=fh, stderr=subprocess.STDOUT,
                             env=env, creationflags=flags, close_fds=True)
     return proc, log

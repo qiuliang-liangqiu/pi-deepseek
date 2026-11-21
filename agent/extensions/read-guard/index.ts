@@ -1,9 +1,8 @@
 /**
  * read-guard：把“文本文件查看用 read，不要用 cat”从提示词变成即时反馈。
  *
- * 默认 READ_GUARD=warn：不改命令，只在 bash 结果尾部追加一行提示。
- * READ_GUARD=block：纯 `cat <单个文本文件>` 直接 block，reason 给出可复制的 read 调用。
- * READ_GUARD=off：关闭。
+ * 默认 READ_GUARD=block：纯 `cat <单个文本文件>` 直接 block。
+ * READ_GUARD=warn：只追加提示；READ_GUARD=off：关闭。
  *
  * 只处理无歧义的“cat 单文件”：
  *   拦截/提醒：cat package.json、cat ./a.txt
@@ -12,7 +11,7 @@
 import { isBashToolResult, isToolCallEventType, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { analyzeBashCommand, formatReadGuard, type GuardMode } from "./policy.ts";
 
-const rawMode = (process.env.READ_GUARD ?? "warn").toLowerCase();
+const rawMode = (process.env.READ_GUARD ?? "block").toLowerCase();
 const MODE: GuardMode = rawMode === "off" || rawMode === "block" ? rawMode : "warn";
 const MIN_BYTES = Math.max(0, Number(process.env.READ_GUARD_MIN_BYTES ?? "0") || 0);
 

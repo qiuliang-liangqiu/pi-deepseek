@@ -68,12 +68,25 @@ def main():
                     if max(c.stat().st_mtime for c in cards) < opened - 5:
                         missing.append(d.name)  # stale card from an earlier run
                 except (OSError, ValueError):
-                    pass
+                    missing.append(d.name)  # unreadable opened_at is not proof of coverage
         if missing:
             print("[triage] missing cards for open boxes: " + ", ".join(sorted(missing)))
             print("        run triage.sh / write triage.txt, or close the box first")
             return 1
-        s["done"] = True; save(s); print("[triage] done"); return 0
+        s["done"] = True
+        save(s)
+        cleared = 0
+        if TEAMS.is_dir():
+            for d in TEAMS.iterdir():
+                tok = d / "reap_token"
+                if tok.exists():
+                    try:
+                        tok.unlink()
+                        cleared += 1
+                    except OSError:
+                        pass
+        print("[triage] done" + (f"; cancelled {cleared} pending reaper(s)" if cleared else ""))
+        return 0
     if a.cmd == "status":
         print(json.dumps(s, ensure_ascii=False, indent=1)); return 0
     # check

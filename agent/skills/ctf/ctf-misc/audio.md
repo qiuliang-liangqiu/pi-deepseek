@@ -237,7 +237,7 @@ for seq in morse_chars:
     decoded += MORSE.get(seq, f'[{seq}]')
 
 print(f"\nDecoded message: {decoded}")
-print(f"Flag: flag{REDACTED}}}")
+print(f"Flag: flag{{{decoded}}}")
 ```
 
 ### Parameter Tuning

@@ -506,6 +506,11 @@ async function runSingleAgent(
 				// The local framework uses TSEC_TOKEN; do not leak a platform
 				// credential into a worker that is only supposed to have read/bash.
 				delete childEnv.TSEC_TOKEN;
+				// CTFY credentials are read by platform_do.py, not by the worker
+				// itself; never hand them to a subagent that may only read/bash.
+				for (const key of Object.keys(childEnv)) {
+					if (key.startsWith("CTFY_")) delete childEnv[key];
+				}
 				// Mark subagent children so local team_pool/framework refuse
 				// start/close/submit/dispatch even if a token ever leaks in.
 				childEnv.TEAM_WORKER = "1";
@@ -514,6 +519,9 @@ async function runSingleAgent(
 					shell: false,
 					stdio: ["ignore", "pipe", "pipe"],
 					env: childEnv,
+					// A console child of a console-less parent gets a brand-new console
+					// window on Windows 11 (Windows Terminal tab pops up per worker).
+					windowsHide: true,
 				});
 			} catch (error) {
 				finish({
@@ -675,6 +683,26 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
+			// In headless mode there is no confirm dialog. Do not run repo-local
+			// agents from an untrusted project just because the caller asked for
+			// agentScope "project"/"both".
+			if (
+				(agentScope === "project" || agentScope === "both") &&
+				!ctx.hasUI &&
+				!ctx.isProjectTrusted() &&
+				discovery.projectAgentsDir
+			) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "Project-local agents are disabled in a headless run unless the project is trusted (ctx.isProjectTrusted()). Use agentScope \"user\" or approve the project first.",
+						},
+					],
+					details: makeDetails("single", true)([]),
+				};
+			}
+
 			const resolvedChain = (params.chain ?? []).map((step) =>
 				resolveAgent(ctx.cwd, agentScope, step.agent, step.cwd),
 			);
@@ -779,6 +807,18 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
+			if (params.tasks && params.tasks.length > 1
+				&& process.env.TEAM_ALLOW_SUBAGENT_PARALLEL !== "1") {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "Parallel subagent tasks are disabled for TSec runs (Promise.all waits for the slowest). Use team_dispatch/team_poll. Set TEAM_ALLOW_SUBAGENT_PARALLEL=1 only for non-TSec work.",
+						},
+					],
+					details: makeDetails("parallel", true)([]),
+				};
+			}
 			if (params.tasks && params.tasks.length > 0) {
 				if (params.tasks.length > MAX_PARALLEL_TASKS)
 					return {

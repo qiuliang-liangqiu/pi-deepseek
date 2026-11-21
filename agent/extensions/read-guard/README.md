@@ -6,8 +6,8 @@
 
 | `READ_GUARD` | 行为 |
 |---|---|
-| `warn`（默认） | 不改命令；在 bash 结果尾部追加一行 `[read-guard] ...`，提示改用 `read` |
-| `block` | 纯 `cat <单个文本文件>` 直接拦截，reason 给出可复制的 `read(path=..., offset=1, limit=2000)` |
+| `warn` | 不改命令；在 bash 结果尾部追加一行 `[read-guard] ...`，提示改用 `read` |
+| `block`（默认） | 纯 `cat <单个文本文件>` 直接拦截，reason 给出可复制的 `read(path=..., offset=1, limit=2000)` |
 | `off` | 关闭 |
 
 可选：`READ_GUARD_MIN_BYTES`（默认 0）只对大于该字节数的文件提示/拦截。
@@ -39,11 +39,11 @@ head/tail/sed ...     # 抽样/脚本场景，误伤成本高
 扩展放在 `~/.pi/agent/extensions/read-guard/`，pi 启动时自动发现；改完代码后 `/reload` 或开新会话。
 
 ```bash
-# 默认 warn
+# 默认 block
 pi
 
-# 观察一段时间后切 block
-READ_GUARD=block pi
+# 需要观察一段时间时切 warn
+READ_GUARD=warn pi
 ```
 
 ## 测试

@@ -5,9 +5,8 @@
  * 来低效试错，长轮次里还会“降智”。人肉盯不住，就让 hook 在结果里插一句。
  *
  * 模式（环境变量 LOOP_GUARD）：
- *   warn  —— 默认。同一命令在最近 LOOP_GUARD_WINDOW 次 bash 调用中出现
- *            >= LOOP_GUARD_WARN 次时，在结果尾部追加一行提醒。
- *   block —— 额外在 >= LOOP_GUARD_BLOCK 次时直接 block，reason 给出替代动作。
+ *   warn  —— 只提示（非默认）。
+ *   block —— 默认。>= LOOP_GUARD_WARN 提醒，>= LOOP_GUARD_BLOCK 直接 block。
  *   off   —— 关闭。
  *
  * 只统计 bash，按“去掉首尾空白 + 压缩连续空白”后的命令做 key；
@@ -22,7 +21,7 @@ import {
 
 type Mode = "warn" | "block" | "off";
 
-const rawMode = (process.env.LOOP_GUARD ?? "warn").toLowerCase();
+const rawMode = (process.env.LOOP_GUARD ?? "block").toLowerCase();
 const MODE: Mode = rawMode === "off" || rawMode === "block" ? rawMode : "warn";
 const WINDOW = Math.max(2, Number(process.env.LOOP_GUARD_WINDOW ?? "12") || 12);
 const WARN_AT = Math.max(2, Number(process.env.LOOP_GUARD_WARN ?? "3") || 3);

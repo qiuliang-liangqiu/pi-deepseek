@@ -555,7 +555,7 @@ flag = int(roots[0])
 
 ## Stereotyped Coppersmith Attack (Single Modulus, Known Prefix) — Stereotyped Coppersmith
 
-**Pattern:** Single `n` (`e=3`), plaintext `m = K + x` where `K` known prefix (e.g., `b'squ1rrel{'` or `b'flag{REDACTED}` (Coppersmith bound `X < n^{1/e}` for degree `e`, ~`n^0.33` for `e=3`). If suffix < `n^{1/3}`, fpylll lattice recovers it.
+**Pattern:** Single `n` (`e=3`), plaintext `m = K + x` where `K` known prefix (e.g., `b'squ1rrel{'` or `b'flag{'`) and `x` small unknown suffix. Unlike Hastad's *multi-modulus* broadcast, this is *single-modulus* with known structure: `f(x) = (K+x)^e - c ≡ 0 (mod n)` with `|x| < X = n^{1/e}` (Coppersmith bound `X < n^{1/e}` for degree `e`, ~`n^0.33` for `e=3`). If suffix < `n^{1/3}`, fpylll lattice recovers it.
 
 ```python
 # Stereotyped single-n Coppersmith via fpylll hg_matrix (primary) — distinct from Hastad broadcast
