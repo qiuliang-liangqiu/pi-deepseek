@@ -10,19 +10,14 @@
 这套东西解决的问题很具体：**让 agent 在有限时间里稳定地少犯错**，而不是让模型显得更聪明。
 
 - **规则层 `agent/`** — 直接装进 `~/.pi/agent`。`AGENTS.md` 是总规则（止损闸门与速率纪律、
-  跑分流程、engagement 打法、prompt-injection 防护、路径对照），配套 9 个启用扩展
-  （`loop-guard` / `read-guard` / `prompt-injection-guard` / `run-gate` / `platform-guard` /
-  `team-pool` / `triage-guard` / `subagent` / `update-check`，另有 1 个未启用的草稿）、
-  10 个命令行脚本、23 个 skill 目录、7 个子代理。**这一层不依赖其它目录，可以独立运行。**
+  跑分流程、engagement 打法、prompt-injection 防护、路径对照），配套 9 个启用扩展、10 个命令行脚本、23 个 skill 目录、7 个子代理。**这一层不依赖其它目录，可以独立运行。**
 - **工具层 `toolbox/`** — 跑分 CLI（`framework.cli`，28 个子命令：平台 API、指纹→打法族、
   竞态编排、SKIP/时间盒看门狗、滚动调度）+ `SOP / PLAYBOOK / PITFALLS` 三份文档。
-  用 `PI_WORKBENCH` 指过去即可，不必拷进 `~/.pi/agent`。
-- **复盘层 `reports/`** — 复盘的结构模板与脱敏规则（示例，不含真实战绩）。
+- **复盘层 `reports/`** — 复盘的结构模板与脱敏规则。
 - **评测层 `eval/`** — 改完 skill 后怎么回归：行为镜像（8 探针 / 19 检查）+ 14 条 skill 路由用例。
 - **脚本层 `scripts/`** — 一行安装、前置检查、增量更新、工具安装、脱敏检查。
 
-仓库**只放方法论与工具**：镜像、会话日志、`teams/`、`sessions/`、比赛附件、真实 flag、
-平台 token 与具体比赛复盘都不在这里。
+
 
 ---
 
@@ -113,17 +108,7 @@ job 持久化到 `jobs.json`，worker 结束写 `result-<job>.md` 与候选文�
 `python eval/route/route_eval.py --dry-run`（路由用例）、
 `cd toolbox && python -m unittest discover -s framework/tests`。一次只改一个文件，指标不降再合并。
 
-**4. 不信任任何输入**
-`prompt-injection-guard` 扫描每个 `tool_result`（命中就加警告块、只警告不改写），
-`scan_injection.py` 可离线扫附件/目录/zip；提交前 `check_no_secrets.py` 确认没有
-flag / token / 内网地址 / 本机绝对路径混进仓库。
-
-**5. 环境不用你操心**
-`scripts/setup-tools.py` 先打印「工具 → 包名 → 版本 → 是否可用」再装，只走包管理器，
-绝不 `curl | sh`、不从 releases 拉二进制；Windows 上没有的工具可以选 WSL / 已有虚拟机 /
-Docker / 自带 QEMU 虚拟机（`portable-vm.py`，不需要对方装任何虚拟机软件）。
-
-**6. 复盘可量化**
+**4. 复盘可量化**
 `ingest_run.py` 只做计数与脱敏（`flag{REDACTED}` / `<ip>` / `<hex>`），
 配合失败 stint 中位、重开率、未开题数、尾声开箱数，能回答"哪条规则真的起作用"。
 
