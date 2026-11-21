@@ -45,3 +45,17 @@ Exit codes for `check`: `0` allow, `1` block, `2` inert.
 total is no longer auto-closed at the tier hard cap; it closes only when
 `teams/<code>/abandon.json` exists. The unknown-total 600 s solved-hold remains
 as the documented fallback.
+
+## 多会话隔离（.owner）
+
+多个 pi 会话共用同一个 `teams/` 目录时，每关只应管自己开的箱：
+
+- `team_pool.py start|adopt|track` 在拿到会话 id（`PI_SESSION_ID`）时写
+  `teams/<code>/.owner`；
+- 扩展在 `session_start` 从 `ctx.sessionManager.getSessionId()` 取 id，并给每次
+  `check` 传 `--session <id>`；
+- `run_gate.py` 跳过 `.owner` 属于**别的**会话的箱，`status` 会单独列出「跳过（别的会话开的）」。
+
+安全默认：拿不到 session id、或箱没有 `.owner`（旧箱）时，行为与以前完全一致
+（所有箱都算本会话的），宁可多拦也不误放。CLI 也可手动指定：
+`run_gate.py status --session <id>`。

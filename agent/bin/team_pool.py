@@ -139,6 +139,21 @@ def _now() -> float:
     return time.time()
 
 
+def _write_owner(tdir: Path) -> None:
+    """Record which session opened this box, so run_gate only gates its own run.
+
+    Written only when the session id is known; without it the box stays
+    "unowned" and every session keeps counting it (old behaviour).
+    """
+    sid = (os.environ.get("RUN_GATE_SESSION") or os.environ.get("PI_SESSION_ID") or "").strip()
+    if not sid or sid == "unknown":
+        return
+    try:
+        (tdir / ".owner").write_text(sid, encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _hhmm() -> str:
     return time.strftime("%H:%M")
 
@@ -1756,6 +1771,7 @@ def adopt(code: str, addr: str) -> int:
         (tdir / "addr.txt").write_text(str(addr), encoding="utf-8")
     opened = _now()
     (tdir / "opened_at").write_text(str(opened), encoding="utf-8")
+    _write_owner(tdir)
     if not triage_active():
         _ensure_enforcer(opened)
     if triage_active():
@@ -1870,6 +1886,7 @@ def track(code: str, addr: str) -> int:
     if not already or reopened or opened == 0:
         opened = _now()
         (tdir / "opened_at").write_text(str(opened), encoding="utf-8")
+        _write_owner(tdir)
     if triage_active():
         _schedule_reaper(code, opened or _now())
     else:

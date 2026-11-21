@@ -48,6 +48,25 @@ APPROVAL_TTL = int(os.environ.get("RUN_GATE_APPROVAL_TTL", "300"))
 FLAG_RE = re.compile(r"flag\{[^}\s]{4,}\}", re.I)
 NOTE_STALL_RE = re.compile(r"(无新原语|没有新原语|no\s+new\s+primitive|stall|give\s*up|放弃)", re.I)
 
+# 多会话共用 teams/ 时的隔离：箱子由开启它的会话拥有（teams/<code>/.owner），
+# 只把关自己的箱子；没有 .owner（旧箱）或无从得知自己是谁时，行为与以前完全一致。
+SESSION_ID = (os.environ.get("RUN_GATE_SESSION") or os.environ.get("PI_SESSION_ID") or "").strip()
+
+
+def box_owner(tdir: Path) -> str:
+    try:
+        return (tdir / ".owner").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def is_foreign(tdir: Path) -> bool:
+    """True when this box belongs to another session (not our run)."""
+    if not SESSION_ID:
+        return False
+    owner = box_owner(tdir)
+    return bool(owner) and owner != SESSION_ID
+
 
 def now() -> float:
     return time.time()
@@ -220,6 +239,8 @@ def local_boxes() -> list[dict]:
             continue
         if (tdir / "closed").exists() or (tdir / "reaped.json").exists():
             continue
+        if is_foreign(tdir):
+            continue
         out.append({
             "code": tdir.name,
             "dir": tdir,
@@ -227,6 +248,27 @@ def local_boxes() -> list[dict]:
             "flags": local_flags(tdir),
             "last": last_activity(tdir, opened),
         })
+    return out
+
+
+def foreign_boxes() -> list[str]:
+    """Boxes skipped because another session opened them (status display only)."""
+    out: list[str] = []
+    if not SESSION_ID:
+        return out
+    try:
+        dirs = sorted(TEAMS.iterdir())
+    except OSError:
+        return out
+    for tdir in dirs:
+        if not tdir.is_dir():
+            continue
+        if not _read_float(tdir / "opened_at", 0.0):
+            continue
+        if (tdir / "closed").exists() or (tdir / "reaped.json").exists():
+            continue
+        if is_foreign(tdir):
+            out.append(tdir.name)
     return out
 
 
@@ -423,6 +465,9 @@ def cmd_status(args) -> int:
     print(f"[run-gate] armed={armed(cat, boxes)} platform_ok={cat.get('ok')} "
           f"finished={cat.get('finished')} reason={cat.get('reason') or '-'}")
     print(f"[run-gate] open boxes: {', '.join(b['code'] for b in boxes) or '-'}")
+    skipped = foreign_boxes()
+    if skipped:
+        print(f"[run-gate] 跳过（别的会话开的）: {', '.join(skipped)} [session {SESSION_ID[:8]}]")
     for b in boxes:
         ch = cmap.get(b["code"], {})
         done, got, total = challenge_done(ch)
@@ -614,6 +659,25 @@ def cmd_selftest(args) -> int:
 
 
 def main(argv=None) -> int:
+    global SESSION_ID
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # --session is accepted on any subcommand (the extension passes it after
+    # session_start); pop it here so every parser stays unchanged.
+    kept: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == "--session" and i + 1 < len(argv):
+            SESSION_ID = argv[i + 1].strip()
+            i += 2
+            continue
+        if tok.startswith("--session="):
+            SESSION_ID = tok.split("=", 1)[1].strip()
+            i += 1
+            continue
+        kept.append(tok)
+        i += 1
+    argv = kept
     p = argparse.ArgumentParser(description="code-level gate against stopping a full-auto run early")
     sub = p.add_subparsers(dest="cmd", required=True)
 

@@ -17,10 +17,14 @@ const ROOT = path.join(os.homedir(), ".pi", "agent");
 const PY = process.env.PYTHON || "python";
 const POOL = path.join(ROOT, "bin", "team_pool.py");
 const EXT_VERSION = "2026-11-20.3";
+// 本会话 id（session_start 时从 ctx 取；扩展进程的 env 里通常没有 PI_SESSION_ID）。
+// 传给 team_pool，让它写 teams/<code>/.owner，run_gate 据此只把关自己的箱。
+let SID = process.env.PI_SESSION_ID || "";
 
 async function pool(args: string[], timeout = 30000): Promise<string> {
   try {
-    const { stdout, stderr } = await exec(PY, [POOL, ...args], { timeout, windowsHide: true });
+    const env = SID ? { ...process.env, PI_SESSION_ID: SID } : undefined;
+    const { stdout, stderr } = await exec(PY, [POOL, ...args], { timeout, windowsHide: true, env });
     return (stdout || stderr || "").trim();
   } catch (e: any) {
     return `team_pool error: ${e?.message || e}`;
@@ -71,10 +75,16 @@ export default function teamPool(pi: ExtensionAPI) {
     return s;
   }
 
-  pi.on("session_start", async () => {
+  pi.on("session_start", async (_event: any, ctx: any) => {
+    try {
+      const id = ctx?.sessionManager?.getSessionId?.();
+      if (typeof id === "string" && id.trim()) SID = id.trim();
+    } catch {
+      /* keep env fallback */
+    }
     try {
       fs.mkdirSync(path.join(ROOT, "teams"), { recursive: true });
-      const sid = process.env.PI_SESSION_ID || "unknown";
+      const sid = SID || "unknown";
       fs.writeFileSync(
         path.join(ROOT, "teams", `.team-pool-ext-${sid}`),
         `${EXT_VERSION} ${sid} ${new Date().toISOString()}

@@ -24,6 +24,14 @@ const PY = process.env.PYTHON || "python";
 const GATE = path.join(ROOT, "bin", "run_gate.py");
 const DISABLED = path.join(ROOT, "run_gate.disabled");
 
+// 会话隔离：多个 pi 会话共用 teams/ 时，只把关本会话开的箱
+// （team_pool 在 start/adopt/track 时写 teams/<code>/.owner）。
+// 拿不到 session id 时不传 --session，行为与以前完全一致。
+let SESSION_ID = "";
+function sessionArgs(): string[] {
+	return SESSION_ID ? ["--session", SESSION_ID] : [];
+}
+
 const POLICY = [
 	"Run gate (code-enforced for full-auto benchmark runs):",
 	"1. `finish` is blocked while any opened challenge is not is_completed / flags>=flag_total.",
@@ -41,7 +49,7 @@ function gateOff(): boolean {
 
 async function gate(args: string[], timeout = 25000): Promise<{ rc: number; out: string }> {
 	try {
-		const { stdout, stderr } = await exec(PY, [GATE, ...args], { timeout, windowsHide: true });
+		const { stdout, stderr } = await exec(PY, [GATE, ...sessionArgs(), ...args], { timeout, windowsHide: true });
 		return { rc: 0, out: String(stdout || stderr || "").trim() };
 	} catch (e: any) {
 		const rc = typeof e?.code === "number" ? e.code : 1;
@@ -122,6 +130,15 @@ export default function runGate(pi: ExtensionAPI) {
 	let settleCount = 0;
 	let settleWindow = 0;
 	let lastSettle = 0;
+
+	pi.on("session_start", async (_event: any, ctx: any) => {
+		try {
+			const id = ctx?.sessionManager?.getSessionId?.();
+			if (typeof id === "string" && id.trim()) SESSION_ID = id.trim();
+		} catch {
+			// 拿不到就保持空：不限定会话，宁可多拦也不误放
+		}
+	});
 
 	pi.on("before_agent_start", async () => {
 		if (gateOff()) return;
