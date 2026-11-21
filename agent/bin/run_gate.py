@@ -526,6 +526,10 @@ def cmd_arm(args) -> int:
 def cmd_disarm(args) -> int:
     if not _require_tty("disarm"):
         return 10
+    if not take_approval("disarm"):
+        print("[run-gate] refuse: no valid TTY approval for disarm; "
+              "run `run_gate.py approve --action disarm` in a TTY first")
+        return 10
     DISABLED.write_text(f"{now()}\n", encoding="utf-8")
     print("[run-gate] disarmed (RUN_GATE.disabled); remove it or run `arm` to re-enable")
     return 0
@@ -639,7 +643,7 @@ def main(argv=None) -> int:
     e.set_defaults(fn=cmd_env_fail)
 
     ap = sub.add_parser("approve")
-    ap.add_argument("--action", choices=["finish", "close"], required=True)
+    ap.add_argument("--action", choices=["finish", "close", "disarm"], required=True)
     ap.add_argument("--code", default="")
     ap.add_argument("--ttl", type=int, default=APPROVAL_TTL)
     ap.set_defaults(fn=cmd_approve)

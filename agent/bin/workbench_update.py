@@ -45,6 +45,7 @@ apply: 0 = 成功（或已是最新）；1 = 更新失败；2 = 找不到更新�
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -56,11 +57,12 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 DEFAULT_REPO = "qiuliang-liangqiu/pi-deepseek-v1"
 DEFAULT_BRANCH = "main"
 VERSION_REL = "agent/VERSION"
+MANIFEST_REL = "agent/.workbench.json"
 CACHE_NAME = ".update-check.json"
 DEFAULT_TTL = 21600
 ERROR_TTL = 1800
@@ -175,6 +177,101 @@ def fetch_version(timeout: float = 4.0, attempts: int = 2) -> tuple[str | None, 
     return None, "", last_err
 
 
+def manifest_sources() -> list[str]:
+    override = os.environ.get("PI_UPDATE_MANIFEST_URL", "").strip()
+    if override:
+        return [override]
+    version_override = os.environ.get("PI_UPDATE_URL", "").strip()
+    if version_override and "VERSION" in version_override:
+        return [version_override.replace("VERSION", ".workbench.json")]
+    repo = os.environ.get("PI_UPDATE_REPO", "").strip() or DEFAULT_REPO
+    branch = os.environ.get("PI_UPDATE_BRANCH", "").strip() or DEFAULT_BRANCH
+    return [
+        f"https://api.github.com/repos/{repo}/contents/{MANIFEST_REL}?ref={branch}",
+        f"https://raw.githubusercontent.com/{repo}/{branch}/{MANIFEST_REL}",
+        f"https://cdn.jsdelivr.net/gh/{repo}@{branch}/{MANIFEST_REL}",
+    ]
+
+
+def fetch_text(url: str, timeout: float, limit: int = 2 << 20) -> str:
+    headers = {"User-Agent": "pi-workbench-update/1", "Cache-Control": "no-cache"}
+    if "api.github.com" in url:
+        headers["Accept"] = "application/vnd.github.raw"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError(f"payload too large (> {limit} bytes)")
+    return raw.decode("utf-8-sig", "replace")
+
+
+def parse_manifest(raw: str) -> dict | None:
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
+        return None
+    files = {}
+    for rel, digest in data["files"].items():
+        if not isinstance(rel, str) or not isinstance(digest, str):
+            continue
+        parts = PurePosixPath(rel).parts
+        if not parts or rel.startswith(("/", "\\")) or ".." in parts:
+            continue
+        if len(digest) < 16:
+            continue
+        files[rel] = digest.lower()
+    if not files:
+        return None
+    data["files"] = files
+    return data
+
+
+def fetch_manifest(timeout: float = 6.0) -> tuple[dict | None, str, str]:
+    last_err = ""
+    for url in manifest_sources():
+        try:
+            manifest = parse_manifest(fetch_text(url, timeout))
+            if manifest:
+                return manifest, url, ""
+            last_err = f"invalid manifest from {url}"
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                last_err = f"HTTP 404：远端没有 {MANIFEST_REL}（先推送一次 manifest）"
+            else:
+                last_err = f"HTTP {e.code}: {e.reason} ({url})"
+        except Exception as e:  # noqa: BLE001
+            last_err = f"{type(e).__name__}: {e} ({url})"
+    return None, "", last_err
+
+
+def sha_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def content_diff(agent: Path, manifest: dict) -> tuple[list[str], list[str]]:
+    changed: list[str] = []
+    missing: list[str] = []
+    for rel, expected in (manifest.get("files") or {}).items():
+        p = agent / Path(*PurePosixPath(rel).parts)
+        if not p.is_file():
+            missing.append(rel)
+            continue
+        try:
+            actual = sha_file(p)
+        except OSError:
+            missing.append(rel)
+            continue
+        if actual.lower() != str(expected).lower():
+            changed.append(rel)
+    return sorted(changed), sorted(missing)
+
+
 def load_cache(agent: Path) -> dict:
     try:
         return json.loads((agent / CACHE_NAME).read_text(encoding="utf-8-sig"))
@@ -269,6 +366,44 @@ def check(agent: Path, force: bool, timeout: float) -> dict:
             cache["failed_at"] = t
             save_cache(agent, cache)
 
+    # Content manifest: compare local agent files with the published hash list.
+    manifest = None
+    manifest_url = ""
+    manifest_error = ""
+    manifest_cached = False
+    manifest_key = os.environ.get("PI_UPDATE_MANIFEST_URL", "").strip() or key
+    same_manifest = cache.get("manifest_source") == manifest_key
+    cached_manifest = cache.get("manifest") if same_manifest and isinstance(cache.get("manifest"), dict) else None
+    manifest_at = int(cache.get("manifest_at") or 0)
+    if cached_manifest and not force and (t - manifest_at) < ttl:
+        manifest = cached_manifest
+        manifest_url = cache.get("manifest_url") or ""
+        manifest_cached = True
+    else:
+        got_m, got_m_url, manifest_error = fetch_manifest(timeout)
+        if got_m:
+            manifest = got_m
+            manifest_url = got_m_url
+            cache.update({"manifest": got_m, "manifest_url": got_m_url,
+                          "manifest_at": t, "manifest_source": manifest_key})
+            save_cache(agent, cache)
+        elif cached_manifest:
+            manifest = cached_manifest
+            manifest_url = cache.get("manifest_url") or ""
+            manifest_cached = True
+
+    changed: list[str] = []
+    missing: list[str] = []
+    if manifest:
+        changed, missing = content_diff(agent, manifest)
+    content_count = len(changed) + len(missing)
+
+    # A manifest may carry a newer VERSION than the cached VERSION file.
+    manifest_version = str(manifest.get("version") or "").strip() if manifest else ""
+    if manifest_version and (not remote or compare(manifest_version, remote) > 0):
+        remote = manifest_version
+
+    vcmp = compare(remote, local) if remote and local else None
     info = {
         "agent": str(agent),
         "local": local,
@@ -278,13 +413,26 @@ def check(agent: Path, force: bool, timeout: float) -> dict:
         "stale": stale,
         "error": error,
         "checked_at": int(cache.get("checked_at") or t),
+        "manifest_url": manifest_url,
+        "manifest_cached": manifest_cached,
+        "manifest_error": manifest_error,
+        "manifest_version": manifest_version,
+        "manifest_commit": str(manifest.get("commit") or "") if manifest else "",
+        "content_changed": changed[:12],
+        "content_missing": missing[:12],
+        "content_count": content_count,
     }
     if not remote:
         info["status"] = "offline"
     elif not local:
         info["status"] = "unknown_local"
-    elif compare(remote, local) > 0:
+    elif vcmp is not None and vcmp > 0:
         info["status"] = "update_available"
+    elif vcmp is not None and vcmp < 0:
+        info["status"] = "up_to_date"
+        info["local_ahead"] = True
+    elif manifest is not None and content_count > 0:
+        info["status"] = "content_diff"
     else:
         info["status"] = "up_to_date"
     return info
@@ -297,9 +445,24 @@ def print_human(info: dict) -> None:
     if status == "update_available":
         suffix = "（缓存）" if info.get("cached") else ""
         print(f"有新版本：{local} -> {remote}{suffix}")
+        if info.get("content_count"):
+            print(f"  另有 {info['content_count']} 个文件与远端内容不同")
         print("升级：python ~/.pi/agent/bin/workbench_update.py apply")
+    elif status == "content_diff":
+        print(f"与 GitHub 内容不同：本机 {local}，远端 {remote}，{info.get('content_count')} 个文件")
+        for rel in (info.get("content_changed") or [])[:8]:
+            print(f"  ~ {rel}")
+        for rel in (info.get("content_missing") or [])[:8]:
+            print(f"  - {rel} (缺失)")
+        print("先看计划：python ~/.pi/agent/bin/workbench_update.py apply --dry-run")
+        print("确认后再 apply；update.py 会给本地版本留 .local-<stamp> 副本。")
     elif status == "up_to_date":
-        print(f"已是最新：{local}")
+        if info.get("local_ahead"):
+            print(f"本机版本 {local} 比远端 {remote} 新（本地未 push？）")
+        else:
+            print(f"已是最新：{local}（内容一致）")
+        if info.get("manifest_error"):
+            print(f"  （内容清单不可用：{info['manifest_error']}）")
     elif status == "unknown_local":
         print(f"本机没有版本文件（读不到 VERSION / manifest.version），远端为 {remote}")
         print("先跑一次安装器或 scripts/update.py 打基线，之后就能比较版本。")

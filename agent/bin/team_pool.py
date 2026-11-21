@@ -300,6 +300,38 @@ def triage_active() -> bool:
     return bool(s) and not s.get("done") and _now() < float(s.get("phase_end") or 0)
 
 
+def _new_run() -> bool:
+    """True for the first box of a new pi session (or a stale anonymous run).
+
+    A completed triage phase must not restart for every A->B box in the same
+    run, but a new run must start a new 30-minute phase. PI_SESSION_ID is the
+    run boundary when available; without it fall back to a 6h marker.
+    """
+    sid = os.environ.get("PI_SESSION_ID", "").strip()
+    if sid:
+        safe = "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in sid)[:64]
+        marker = TEAMS / f".run-{safe}"
+        if marker.exists():
+            return False
+        try:
+            marker.write_text(str(_now()), encoding="utf-8")
+        except OSError:
+            pass
+        return True
+    marker = TEAMS / ".run-anon"
+    try:
+        fresh = _now() - marker.stat().st_mtime < TRIAGE_RESTART_AFTER
+    except OSError:
+        fresh = False
+    if fresh:
+        return False
+    try:
+        marker.write_text(str(_now()), encoding="utf-8")
+    except OSError:
+        pass
+    return True
+
+
 def alive(pid) -> bool:
     if not pid:
         return False
@@ -1710,8 +1742,10 @@ def adopt(code: str, addr: str) -> int:
         phase_end = float(st.get("phase_end") or 0)
     except (TypeError, ValueError):
         phase_end = 0.0
-    stale = bool(phase_end) and _now() - phase_end > TRIAGE_RESTART_AFTER
-    need_triage = (not st) or bool(st.get("done")) or stale
+    new_run = _new_run()
+    need_triage = (not st) or (
+        new_run and (bool(st.get("done")) or (bool(phase_end) and phase_end < _now()))
+    )
     if need_triage and os.environ.get("TBENCH_TRIAGE", "1") != "0":
         try:
             subprocess.run([PY, str(TRIAGE_GATE), "start"], capture_output=True, timeout=10,
@@ -2016,7 +2050,9 @@ def doctor() -> int:
     # footer: it must contain "ext 2026-11-20.3".
     sid = os.environ.get("PI_SESSION_ID") or ""
     ext = TEAMS / f".team-pool-ext-{sid}" if sid else None
-    if ext and ext.exists():
+    if not sid:
+        print("extension marker: PI_SESSION_ID not set (advisory only; check the footer)")
+    elif ext and ext.exists():
         try:
             print("extension marker (advisory, may be a child):", ext.read_text(encoding="utf-8").strip())
         except OSError:
@@ -2067,7 +2103,7 @@ def doctor() -> int:
     print("rules at risk:")
     if not (base and token):
         print("  - platform actions are inert (no base/token)")
-    has_ext = (TEAMS / f".team-pool-ext-{sid}").exists() if sid else False
+    has_ext = (TEAMS / f".team-pool-ext-{sid}").exists() if sid else True
     if not has_ext:
         print("  - extension likely old in this session (footer without ext 2026-11-20.3)")
     print(f"  - READ_GUARD={os.environ.get('READ_GUARD', 'block')} LOOP_GUARD={os.environ.get('LOOP_GUARD', 'block')}")
@@ -2137,7 +2173,7 @@ def doctor() -> int:
     try:
         s = json.loads(TRIAGE.read_text(encoding="utf-8"))
         if s.get("done"):
-            print("  - triage is done; a NEW run must call triage_gate.py start explicitly")
+            print("  - triage is done; new boxes go straight to A→B (a phase older than 6h restarts triage; TBENCH_TRIAGE=0 disables)")
     except Exception:
         pass
     return 0

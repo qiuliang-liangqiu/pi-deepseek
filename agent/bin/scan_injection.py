@@ -73,24 +73,28 @@ def clip(s: str, n: int = SNIPPET) -> str:
 
 def scan_text(text: str, source: str) -> list[Hit]:
     hits: list[Hit] = []
-    seen: set[tuple[str, int]] = set()
+    seen: set[tuple[str, int, int]] = set()
     for lineno, line in enumerate(text.splitlines(), 1):
         if not line:
             continue
         # Minified JS/HTML can put the payload on a single 100 KB line; scan
-        # both ends instead of dropping the line.
-        if len(line) > MAX_LINE:
-            line = line[:MAX_LINE] + " \u2026 " + line[-MAX_LINE:]
-        for name, sev, rx in COMPILED:
-            if not rx.search(line):
-                continue
-            key = (name, lineno)
-            if key in seen:
-                continue
-            seen.add(key)
-            hits.append(Hit(source, lineno, name, sev, clip(line)))
-            if len(hits) >= MAX_HITS:
-                return hits
+        # every chunk instead of dropping the line or only looking at its ends.
+        chunks = (
+            [line]
+            if len(line) <= MAX_LINE
+            else [line[i:i + MAX_LINE] for i in range(0, len(line), MAX_LINE)]
+        )
+        for ci, chunk in enumerate(chunks):
+            for name, sev, rx in COMPILED:
+                if not rx.search(chunk):
+                    continue
+                key = (name, lineno, ci)
+                if key in seen:
+                    continue
+                seen.add(key)
+                hits.append(Hit(source, lineno, name, sev, clip(chunk)))
+                if len(hits) >= MAX_HITS:
+                    return hits
     return hits
 
 

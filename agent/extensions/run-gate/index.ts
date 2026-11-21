@@ -49,13 +49,28 @@ async function gate(args: string[], timeout = 25000): Promise<{ rc: number; out:
 	}
 }
 
+function commandSegments(cmd: string): string[] {
+	return cmd
+		.split(/[\n;|]+|&&|\|\|/)
+		.map((s) => s.trim())
+		.filter(Boolean);
+}
+
+function actionableSegments(cmd: string): string[] {
+	// A prefix such as `cat /dev/null;` must not turn the real call into a
+	// “read command” and bypass the finish/close gate.
+	return commandSegments(cmd).filter(
+		(s) => !/^(?:cat|grep|rg|head|tail|less|sed)\b/.test(s),
+	);
+}
+
 function finishIntent(name: string, input: any): boolean {
 	if (/^(?:mcp__[a-z0-9_]+__)?(?:finish|finish_run|end_run|finish_benchmark)$/i.test(name)) return true;
 	if (name !== "bash") return false;
 	const cmd = String(input?.command || "");
-	// Do not match a grep/cat of documentation; only an actual finish call.
-	if (/(?:^|[\s;&|])(cat|grep|rg|head|tail|less|sed)\b/.test(cmd)) return false;
-	return /(?:openapi\/v1\/[^\s"']*(?:finish|end_run)|framework\.cli\s+finish|run_gate\.py\s+finish|tsec\.py\s+finish)/i.test(cmd);
+	return actionableSegments(cmd).some((s) =>
+		/(?:openapi\/v1\/[^\s"']*(?:finish|end_run)|framework\.cli\s+finish|run_gate\.py\s+finish|tsec\.py\s+finish)/i.test(s),
+	);
 }
 
 function closeTarget(name: string, input: any): string | null {
@@ -64,16 +79,17 @@ function closeTarget(name: string, input: any): string | null {
 	}
 	if (name !== "bash") return null;
 	const cmd = String(input?.command || "");
-	if (/(?:^|[\s;&|])(cat|grep|rg|head|tail|less|sed)\b/.test(cmd)) return null;
 	const pats = [
 		/openapi\/v1\/challenges\/close\?unique_code=([A-Za-z0-9_.-]+)/,
 		/team_pool\.py\s+(?:api_)?close\s+["']?([A-Za-z0-9_.-]+)["']?/,
 		/(?:-m\s+)?framework\.cli\s+close\s+["']?([A-Za-z0-9_.-]+)["']?/,
 		/tsec\.py\s+close\s+["']?([A-Za-z0-9_.-]+)["']?/,
 	];
-	for (const re of pats) {
-		const m = cmd.match(re);
-		if (m) return decodeURIComponent(m[1]);
+	for (const seg of actionableSegments(cmd)) {
+		for (const re of pats) {
+			const m = seg.match(re);
+			if (m) return decodeURIComponent(m[1]);
+		}
 	}
 	return null;
 }
@@ -87,14 +103,16 @@ function controlIntent(name: string, input: any): string | null {
 	}
 	if (name !== "bash") return null;
 	const cmd = String(input?.command || "");
-	if (/(?:^|[\s;&|])(cat|grep|rg|head|tail|less|sed)\b/.test(cmd)) return null;
-	if (/run_gate\.py\s+disarm\b/.test(cmd)) return "run_gate.py disarm";
-	if (/run_gate\.py\s+approve\b/.test(cmd)) return "run_gate.py approve";
-	if (/team_pool\.py\s+panic\b/.test(cmd)) return "team_pool.py panic";
-	if (/(?:-m\s+)?framework\.cli\s+panic\b/.test(cmd)) return "framework.cli panic";
+	const segs = actionableSegments(cmd);
+	if (segs.some((s) => /run_gate\.py\s+disarm\b/.test(s))) return "run_gate.py disarm";
+	if (segs.some((s) => /run_gate\.py\s+approve\b/.test(s))) return "run_gate.py approve";
+	if (segs.some((s) => /team_pool\.py\s+panic\b/.test(s))) return "team_pool.py panic";
+	if (segs.some((s) => /(?:-m\s+)?framework\.cli\s+panic\b/.test(s))) return "framework.cli panic";
 	if (
-		/run_gate\.disabled/.test(cmd) &&
-		/(?:>>?|\btee\b|\brm\b|\bmv\b|\bcp\b|\bSet-Content\b|\bOut-File\b)/.test(cmd)
+		segs.some((s) =>
+			/run_gate\.disabled/.test(s) &&
+			/(?:>>?|\btee\b|\brm\b|\bmv\b|\bcp\b|\btouch\b|\btruncate\b|\bSet-Content\b|\bOut-File\b)/.test(s),
+		)
 	)
 		return "writing run_gate.disabled";
 	return null;

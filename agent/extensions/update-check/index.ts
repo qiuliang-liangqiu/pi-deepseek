@@ -30,12 +30,20 @@ const MODE = (process.env.PI_UPDATE_CHECK ?? "on").toLowerCase();
 const NOTIFY_TTL_MS = 24 * 3600 * 1000;
 
 type CheckInfo = {
-	status: "update_available" | "up_to_date" | "unknown_local" | "offline" | string;
+	status: "update_available" | "content_diff" | "up_to_date" | "unknown_local" | "offline" | string;
 	local?: string | null;
 	remote?: string | null;
 	cached?: boolean;
 	stale?: boolean;
 	error?: string;
+	manifest_url?: string;
+	manifest_version?: string;
+	manifest_commit?: string;
+	manifest_error?: string;
+	content_count?: number;
+	content_changed?: string[];
+	content_missing?: string[];
+	local_ahead?: boolean;
 };
 
 type RunResult = { code: number; stdout: string; stderr: string };
@@ -100,12 +108,12 @@ function readState(): { version?: string; at?: number } {
 	}
 }
 
-function shouldNotify(version: string): boolean {
+function shouldNotify(key: string): boolean {
 	const state = readState();
 	const fresh = typeof state.at === "number" && Date.now() - state.at < NOTIFY_TTL_MS;
-	if (state.version === version && fresh) return false;
+	if (state.version === key && fresh) return false;
 	try {
-		fs.writeFileSync(STATE_FILE, JSON.stringify({ version, at: Date.now() }) + "\n", "utf8");
+		fs.writeFileSync(STATE_FILE, JSON.stringify({ version: key, at: Date.now() }) + "\n", "utf8");
 	} catch {
 		// 写不了状态就照常提示
 	}
@@ -119,7 +127,7 @@ function tail(text: string, maxLines = 22, maxChars = 1800): string {
 }
 
 async function checkNow(force: boolean): Promise<CheckInfo | null> {
-	const result = await run(["check", "--json", ...AGENT_ARGS, ...(force ? ["--force"] : [])], 20_000);
+	const result = await run(["check", "--json", ...AGENT_ARGS, ...(force ? ["--force"] : [])], 45_000);
 	return parseCheck(result);
 }
 
@@ -127,10 +135,20 @@ function describe(info: CheckInfo): string {
 	const local = info.local || "未知";
 	const remote = info.remote || "未知";
 	if (info.status === "update_available") return `有新版本 ${local} -> ${remote}`;
+	if (info.status === "content_diff")
+		return `本地 Agent 与 GitHub 内容不同（${info.content_count ?? "?"} 个文件；本机 ${local}，远端 ${remote}）`;
 	if (info.status === "up_to_date") return `已是最新 ${local}`;
 	if (info.status === "unknown_local") return `本机没有版本文件（远端 ${remote}），先跑一次安装器`;
 	if (info.status === "offline") return `取不到远端版本${info.error ? `（${info.error}）` : ""}`;
 	return `状态：${info.status}`;
+}
+
+function actionable(info: CheckInfo): boolean {
+	return info.status === "update_available" || info.status === "content_diff";
+}
+
+function notifyKey(info: CheckInfo): string {
+	return `${info.status}:${info.manifest_commit || info.remote || ""}:${info.content_count || 0}`;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -149,10 +167,18 @@ export default function (pi: ExtensionAPI) {
 			if (!info || !ctx.hasUI) return;
 			if (info.status === "update_available" && info.remote) {
 				ctx.ui.setStatus(STATUS_KEY, `wb ↑ ${info.remote}`);
-				if (shouldNotify(info.remote)) {
+				if (shouldNotify(notifyKey(info))) {
 					ctx.ui.notify(
 						`workbench 有新版本 ${info.remote}（本机 ${info.local}）。/wb-update 查看计划并升级`,
 						"info",
+					);
+				}
+			} else if (info.status === "content_diff") {
+				ctx.ui.setStatus(STATUS_KEY, `wb ≠ ${info.content_count ?? "?"}`);
+				if (shouldNotify(notifyKey(info))) {
+					ctx.ui.notify(
+						`本地 Agent 与 GitHub 内容不同（${info.content_count ?? "?"} 个文件）。/wb-update 查看计划；本地文件会保留 .local 副本`,
+						"warning",
 					);
 				}
 			} else if (info.status === "up_to_date") {
@@ -172,8 +198,11 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			ctx.ui.notify(describe(info), "info");
-			if (info.status === "update_available" && info.remote) {
-				ctx.ui.setStatus(STATUS_KEY, `wb ↑ ${info.remote}`);
+			if (actionable(info)) {
+				ctx.ui.setStatus(
+					STATUS_KEY,
+					info.status === "content_diff" ? `wb ≠ ${info.content_count ?? "?"}` : `wb ↑ ${info.remote}`,
+				);
 			}
 		},
 	});
@@ -194,7 +223,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(describe(info), "info");
 				return;
 			}
-			if (info.status !== "update_available") {
+			if (!actionable(info)) {
 				ctx.ui.notify(describe(info), "warning");
 				return;
 			}
@@ -202,8 +231,12 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify("正在生成更新计划…", "info");
 			const plan = await run(["apply", "--dry-run", ...AGENT_ARGS], 120_000);
 			const planText = tail(plan.stdout || plan.stderr || "(没有输出)");
+			const title =
+				info.status === "content_diff"
+					? `本地 Agent 与 GitHub 有 ${info.content_count ?? "?"} 个文件不同；应用远端版本？`
+					: `升级 workbench ${info.local} -> ${info.remote}?`;
 			const ok = await ctx.ui.confirm(
-				`升级 workbench ${info.local} -> ${info.remote}?`,
+				title,
 				`${planText}\n\n会先备份到 ~/.pi/agent/backups/，你本地改过的文件会保留 .local-<时间戳> 副本。`,
 			);
 			if (!ok) {
@@ -216,8 +249,11 @@ export default function (pi: ExtensionAPI) {
 			if (result.code === 0) {
 				// 更新脚本跑了但版本没变：多半是本地 checkout 过期 / git pull 失败
 				const after = await checkNow(true);
-				if (after && after.status === "update_available") {
-					ctx.ui.setStatus(STATUS_KEY, `wb ↑ ${after.remote}`);
+				if (after && actionable(after)) {
+					ctx.ui.setStatus(
+						STATUS_KEY,
+						after.status === "content_diff" ? `wb ≠ ${after.content_count ?? "?"}` : `wb ↑ ${after.remote}`,
+					);
 					ctx.ui.notify(
 						`文件已更新，但本机版本仍是 ${after.local}（远端 ${after.remote}）：检查本地 checkout 是否落后，或在仓库目录跑 git pull 后重试 /wb-update`,
 						"warning",

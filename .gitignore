@@ -31,3 +31,7 @@ eval/mirror/reports/local-*.txt
 *.tmp
 .venv/
 node_modules/
+
+# workbench update-check runtime cache (agent dir)
+agent/.update-check.json
+agent/.update-notified.json

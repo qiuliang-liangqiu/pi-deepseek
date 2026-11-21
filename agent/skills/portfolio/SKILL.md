@@ -37,7 +37,7 @@ Every tool result ends with
 
 1. **30-minute triage, then A→B with one hard slot.** First 2 minutes: list
    and sort. First 25–30 minutes: 3 lanes, one box each, 30–60 seconds per
-   challenge with `%USERPROFILE%/.pi/agent/bin/triage.sh`; write A/B/C/D; close and rotate.
+   challenge with `C:/Users/30367/.pi/agent/bin/triage.sh`; write A/B/C/D; close and rotate.
    **Enforced:** a box opened in the first 30 minutes is `TRIAGE` and the
    harness closes it at the 120-second probe deadline; auto-recon is off.
    All 50 get a shallow fingerprint — do not spend 2 hours. If every open

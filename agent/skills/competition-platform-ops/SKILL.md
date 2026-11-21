@@ -35,8 +35,8 @@ python ~/.pi/agent/bin/platform_do.py submit \
 
 - 查平台 `/instances`，要求**唯一**匹配：
   - `status == ready`；
-  - **本队**（必须传 `--team <team_id>` 或设置 `CTFY_TEAM_ID`/`CTF2_TEAM_ID`；
-    未配置则视为无法验证，fail closed，不提交）；
+  - **本队**（必须设置 `CTFY_TEAM_ID`/`CTF2_TEAM_ID`，或在 config.toml 写 `team_id`；
+    未配置则视为无法验证，fail closed，不提交。`--team` 只做一致性断言，不能覆盖已配置的队）；
   - `services` 里的 `host:port` 完全一致（给 SNI 时 `tls_sni` 也要一致）；
   - `challenge_id` 对得上（可选 `--challenge`）。
 - 匹配通过 → 自动 `POST /submissions`，带该 `instance_id`；

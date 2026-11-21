@@ -112,23 +112,29 @@ export function scanText(text: string): Hit[] {
 	for (let i = 0; i < lines.length; i++) {
 		const rawLine = lines[i];
 		if (!rawLine) continue;
-		// Minified JS/HTML payloads are often one very long line; scan both
-		// ends instead of skipping the whole line.
-		const line =
-			rawLine.length > 4000 ? rawLine.slice(0, 4000) + " … " + rawLine.slice(-4000) : rawLine;
-		for (const rule of RULES) {
-			const m = rule.re.exec(line);
-			if (!m) continue;
-			const key = `${rule.name}:${i}`;
-			if (seen.has(key)) continue;
-			seen.add(key);
-			hits.push({
-				rule: rule.name,
-				severity: rule.severity,
-				line: i + 1,
-				text: clip(line, 220),
-				match: clip(m[0], 120),
-			});
+		// Minified JS/HTML payloads are often one very long line; scan every
+		// chunk instead of skipping the line or only looking at its ends.
+		const chunks =
+			rawLine.length > 4000
+				? Array.from({ length: Math.ceil(rawLine.length / 4000) }, (_, k) => rawLine.slice(k * 4000, (k + 1) * 4000))
+				: [rawLine];
+		for (let ci = 0; ci < chunks.length; ci++) {
+			const line = chunks[ci];
+			for (const rule of RULES) {
+				const m = rule.re.exec(line);
+				if (!m) continue;
+				const key = `${rule.name}:${i}:${ci}`;
+				if (seen.has(key)) continue;
+				seen.add(key);
+				hits.push({
+					rule: rule.name,
+					severity: rule.severity,
+					line: i + 1,
+					text: clip(line, 220),
+					match: clip(m[0], 120),
+				});
+				if (hits.length >= 12) break;
+			}
 			if (hits.length >= 12) break;
 		}
 		if (hits.length >= 12) break;

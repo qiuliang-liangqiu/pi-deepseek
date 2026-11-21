@@ -21,7 +21,6 @@ import hashlib
 import json
 import os
 import re
-import sys
 import time
 import urllib.error
 import urllib.parse
@@ -37,30 +36,118 @@ PLACEHOLDER_RE = re.compile(r"TEST_PLATFORM|PLACEHOLDER|EXAMPLE_FLAG|TODO_FLAG",
 
 _BASE: str | None = None
 _TOKEN: str | None = None
+_TEAM_ID: str = ""
+
+
+def _load_ctfy_toml() -> tuple[str, str, str]:
+    """Read ~/.config/ctfy/config.toml (the CLI's own credential file)."""
+    path = HOME / ".config" / "ctfy" / "config.toml"
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return "", "", ""
+    try:
+        import tomllib  # Python 3.11+
+        data = tomllib.loads(raw)
+    except Exception:  # noqa: BLE001
+        # Minimal fallback for old Python: url/token lines.
+        url = ""
+        tok = ""
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith("current") and "=" in line:
+                continue
+            elif line.startswith("url") and "=" in line:
+                url = line.split("=", 1)[1].strip().strip('"').strip("'")
+            elif line.startswith("token") and "=" in line:
+                tok = line.split("=", 1)[1].strip().strip('"').strip("'")
+        return url, tok, ""
+    hosts = data.get("hosts") or {}
+    current = str(data.get("current") or "")
+    host = hosts.get(current) or {}
+    if not isinstance(host, dict):
+        host = {}
+    return (
+        str(host.get("url") or "").strip(),
+        str(host.get("token") or "").strip(),
+        str(host.get("team_id") or "").strip(),
+    )
+
+
+def _load_mcp_cfg() -> tuple[str, str, str]:
+    """Read mcp.json: mcpServers.ctfy.env or mcpServers.ctf2 url+Bearer."""
+    cfg_path = HOME / ".pi" / "agent" / "mcp.json"
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return "", "", ""
+    servers = cfg.get("mcpServers") or {}
+    base = ""
+    token = ""
+    team = ""
+    ctfy_env = ((servers.get("ctfy") or {}).get("env") or {})
+    base = str(ctfy_env.get("CTFY_PLATFORM_URL") or "").strip()
+    token = str(ctfy_env.get("CTFY_TOKEN") or "").strip()
+    team = str(ctfy_env.get("CTFY_TEAM_ID") or "").strip()
+    c2 = servers.get("ctf2") or {}
+    if not base:
+        url = str(c2.get("url") or "").strip()
+        if url:
+            parsed = urllib.parse.urlparse(url)
+            if parsed.scheme and parsed.netloc:
+                base = f"{parsed.scheme}://{parsed.netloc}"
+    if not token:
+        auth = str((c2.get("headers") or {}).get("Authorization") or "").strip()
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+    c2_env = c2.get("env") or {}
+    base = base or str(c2_env.get("CTF2_PLATFORM_URL") or "").strip()
+    token = token or str(c2_env.get("CTF2_TOKEN") or "").strip()
+    team = team or str(c2_env.get("CTF2_TEAM_ID") or "").strip()
+    return base, token, team
 
 
 def _load_cfg() -> tuple[str, str]:
-    global _BASE, _TOKEN
+    global _BASE, _TOKEN, _TEAM_ID
     if _BASE and _TOKEN:
         return _BASE, _TOKEN
     base = os.environ.get("CTFY_PLATFORM_URL", "").strip()
     token = os.environ.get("CTFY_TOKEN", "").strip()
-    if not base or not token:
-        cfg_path = HOME / ".pi" / "agent" / "mcp.json"
-        try:
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except Exception as exc:  # noqa: BLE001
-            raise SystemExit(f"cannot read {cfg_path}: {exc}") from exc
-        env = ((cfg.get("mcpServers") or {}).get("ctfy") or {}).get("env") or {}
-        base = base or str(env.get("CTFY_PLATFORM_URL", "")).strip()
-        token = token or str(env.get("CTFY_TOKEN", "")).strip()
+    team = (os.environ.get("CTFY_TEAM_ID") or os.environ.get("CTF2_TEAM_ID") or "").strip()
+    if not base or not token or not team:
+        b, t, tm = _load_ctfy_toml()
+        base = base or b
+        token = token or t
+        team = team or tm
+    if not base or not token or not team:
+        b, t, tm = _load_mcp_cfg()
+        base = base or b
+        token = token or t
+        team = team or tm
     if not base or not token:
         raise SystemExit(
-            "missing CTFY_PLATFORM_URL / CTFY_TOKEN "
-            "(set env vars or configure mcpServers.ctfy.env in ~/.pi/agent/mcp.json)"
+            "missing platform URL/token: set CTFY_PLATFORM_URL + CTFY_TOKEN "
+            "(and CTFY_TEAM_ID), or fill ~/.config/ctfy/config.toml, "
+            "or configure mcpServers.ctfy / mcpServers.ctf2 in ~/.pi/agent/mcp.json"
         )
-    _BASE, _TOKEN = base.rstrip("/"), token
+    _BASE, _TOKEN, _TEAM_ID = base.rstrip("/"), token, team
     return _BASE, _TOKEN
+
+
+def own_team() -> str:
+    _load_cfg()
+    return _TEAM_ID.strip()
+
+
+def _check_own_team(inst: dict[str, Any], wanted: str) -> str:
+    got = str(inst.get("team_id") or "").strip()
+    if not wanted:
+        return "team identity is not configured (set --team, CTFY_TEAM_ID/CTF2_TEAM_ID, or team_id in config.toml)"
+    if not got:
+        return "instance has no team_id; cannot prove it belongs to this team"
+    if got != wanted:
+        return f"instance team_id {got!r} != this team {wanted!r}"
+    return ""
 
 
 def _redact(text: str) -> str:
@@ -106,6 +193,10 @@ def _items(data: Any) -> list[dict[str, Any]]:
             value = data.get(key)
             if isinstance(value, list):
                 return [x for x in value if isinstance(x, dict)]
+            if isinstance(value, dict):
+                nested = _items(value)
+                if nested:
+                    return nested
     return []
 
 
@@ -311,7 +402,7 @@ def submit_instance(inst: dict[str, Any], answer: str, question: str, mode: str,
         "instance_id": iid,
     }
     status, resp = api("POST", "/submissions", body)
-    if status != 200:
+    if status not in (200, 201, 204):
         emit(
             {
                 "status": "http_error",
@@ -348,6 +439,8 @@ def submit_instance(inst: dict[str, Any], answer: str, question: str, mode: str,
 
 
 def cmd_submit(args: argparse.Namespace) -> None:
+    if os.environ.get("TEAM_WORKER") == "1":
+        emit({"status": "error", "error": "workers may not submit flags"}, 1)
     answer = read_answer(args.answer_file)
     ans_hash = answer_sha256(answer)
     if PLACEHOLDER_RE.search(answer) and not args.allow_placeholder:
@@ -364,6 +457,19 @@ def cmd_submit(args: argparse.Namespace) -> None:
     if args.qa:
         if not args.competition or not args.challenge:
             emit({"status": "error", "error": "--qa needs --competition and --challenge"}, 1)
+        if args.dry_run:
+            emit(
+                {
+                    "status": "would_submit",
+                    "mode": "qa",
+                    "challenge_id": args.challenge,
+                    "competition_id": args.competition,
+                    "question": args.question,
+                    "answer_sha256": ans_hash,
+                    "dry_run": True,
+                },
+                0,
+            )
         if not args.approval:
             emit(
                 {
@@ -425,8 +531,62 @@ def cmd_submit(args: argparse.Namespace) -> None:
             emit({"status": "no_match", "mode": "instance_only", "reason": "challenge mismatch", "instance_challenge": chal, "requested": args.challenge}, 2)
         if args.competition and str(args.competition) != comp:
             emit({"status": "no_match", "mode": "instance_only", "reason": "competition mismatch", "instance_competition": comp, "requested": args.competition}, 2)
-        if args.team and inst.get("team_id") and str(args.team) != str(inst.get("team_id")):
-            emit({"status": "no_match", "mode": "instance_only", "reason": "team mismatch", "instance_team": inst.get("team_id"), "requested": args.team}, 2)
+        wanted_team = own_team()
+        requested_team = str(args.team or "").strip()
+        if not wanted_team:
+            emit(
+                {
+                    "status": "team_unverified",
+                    "mode": "instance_only",
+                    "reason": "team identity is not configured; refusing to submit",
+                    "instance_id": args.instance_id,
+                    "instance_team": inst.get("team_id"),
+                    "hint": "set CTFY_TEAM_ID/CTF2_TEAM_ID (or team_id in ~/.config/ctfy/config.toml) once for this team",
+                },
+                4,
+            )
+        if requested_team and requested_team != wanted_team:
+            emit(
+                {
+                    "status": "no_match",
+                    "mode": "instance_only",
+                    "reason": f"--team {requested_team!r} != configured team {wanted_team!r}",
+                    "instance_id": args.instance_id,
+                    "instance_team": inst.get("team_id"),
+                    "requested_team": requested_team,
+                    "configured_team": wanted_team,
+                },
+                2,
+            )
+        team_reason = _check_own_team(inst, wanted_team)
+        if team_reason:
+            emit(
+                {
+                    "status": "no_match",
+                    "mode": "instance_only",
+                    "reason": team_reason,
+                    "instance_id": args.instance_id,
+                    "instance_team": inst.get("team_id"),
+                    "configured_team": wanted_team,
+                },
+                2,
+            )
+
+        if args.dry_run:
+            emit(
+                {
+                    "status": "would_submit",
+                    "mode": "instance_only",
+                    "instance_id": args.instance_id,
+                    "challenge_id": chal,
+                    "competition_id": comp,
+                    "team_id": inst.get("team_id"),
+                    "question": args.question,
+                    "answer_sha256": ans_hash,
+                    "dry_run": True,
+                },
+                0,
+            )
 
         if not args.approval:
             emit(
@@ -463,7 +623,36 @@ def cmd_submit(args: argparse.Namespace) -> None:
 
     candidates: list[dict[str, Any]] = []
     checked: list[dict[str, Any]] = []
+    wanted_team = own_team()
+    requested_team = str(args.team or "").strip()
+    if not wanted_team:
+        emit(
+            {
+                "status": "team_unverified",
+                "mode": "service",
+                "target": args.target,
+                "reason": "team identity is not configured; refusing to auto-submit",
+                "hint": "set CTFY_TEAM_ID/CTF2_TEAM_ID (or team_id in ~/.config/ctfy/config.toml) once for this team",
+            },
+            4,
+        )
+    if requested_team and requested_team != wanted_team:
+        emit(
+            {
+                "status": "no_match",
+                "mode": "service",
+                "target": args.target,
+                "reason": f"--team {requested_team!r} != configured team {wanted_team!r}",
+                "requested_team": requested_team,
+                "configured_team": wanted_team,
+            },
+            2,
+        )
     for inst in instances:
+        team_reason = _check_own_team(inst, wanted_team)
+        if team_reason:
+            checked.append({"id": inst.get("id"), "team_id": inst.get("team_id"), "skip": team_reason})
+            continue
         inst = wait_ready(inst, args.wait)
         if status_of(inst) not in READY_STATUS:
             checked.append({"id": inst.get("id"), "status": status_of(inst), "challenge_id": inst.get("challenge_id")})
@@ -551,6 +740,8 @@ def cmd_submit(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    if os.environ.get("TEAM_WORKER") == "1":
+        raise SystemExit("platform_do: workers may not submit flags")
     parser = argparse.ArgumentParser(description="Sanctioned platform write path (address-bound).")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("submit", help="submit a flag")
@@ -567,7 +758,7 @@ def main() -> None:
     p.add_argument("--wait", type=int, default=20, help="seconds to wait for a starting instance (default 20)")
     p.add_argument("--dry-run", action="store_true", help="print the plan without submitting")
     p.add_argument("--allow-placeholder", action="store_true", help="allow TEST_PLATFORM/PLACEHOLDER-looking answers")
-    args = p.parse_args()
+    args = parser.parse_args()
 
     if args.cmd == "submit":
         cmd_submit(args)

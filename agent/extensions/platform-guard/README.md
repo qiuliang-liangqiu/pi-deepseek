@@ -35,8 +35,8 @@ Only flag-submission intent:
 
 - `bash` commands that call `/submissions` or `/qa/submissions` on a platform host.
 - `bash` commands that run a local script containing such a raw submission call.
-- MCP submit tools: `ctf2_submit_flag`, `ctf2_submit_competition_flag`, and the
-  `mcp__ctfy__*submit*` equivalents.
+- MCP submit tools: `mcp__ctf2__ctf2_submit_flag`, `mcp__ctf2__ctf2_submit_competition_flag`,
+  and the `mcp__ctfy__*submit*` equivalents.
 - `codemode` scripts that call those MCP submit tools or raw `/submissions`.
 - `write` / `edit` of `platform-guard`, `platform_do.py`, `platform_audit.py`,
   `platform_approve.py`, or `~/.pi/agent/approvals/`.
@@ -47,7 +47,7 @@ Only flag-submission intent:
 - Authoring / challenge image upload (`/authored-challenges`, `/authoring/*`).
 - Instance start / stop / renew / delete.
 - Evaluation / check endpoints (`/instances/*/check`, `/eval/*`).
-- Any GET / read.
+- GET / read on submission endpoints (only write intent is gated).
 - Flag submissions through `platform_do.py` (which applies the address-binding rules).
 
 ## Allowed submission path

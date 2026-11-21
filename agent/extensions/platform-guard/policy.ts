@@ -45,8 +45,33 @@ const SANCTIONED_RE =
 const TOKEN_LEAK_RE =
 	/(?:\becho\b|\bprintf\b|\bprint\b|\bcat\b|\btype\b|\bmore\b|\bGet-Content\b|\benv\b|\bset\b)[\s\S]{0,240}(?:CTFY_TOKEN|BENCHMARK_TOKEN)/i;
 
-const GUARD_WRITE_RE =
-	/(?:>>?|\brm\b|\bmv\b|\bcp\b|\bsed\s+-i\b|\bSet-Content\b|\bOut-File\b|\btee\b|open\s*\([^)]*['"]w)/i;
+const DESTRUCTIVE_RE =
+	/(?:>>?|\brm\b|\bmv\b|\bcp\b|\bsed\s+-i\b|\bSet-Content\b|\bOut-File\b|\btee\b|open\s*\([^)]*['"][wax])/i;
+
+function tamperHit(command: string, cwd: string): boolean {
+	if (!isGuardText(command)) return false;
+	// A redirection is only tampering when its target is a guard/approval path.
+	for (const target of redirectionTargets(command)) {
+		if (!/^&[12]$/.test(target) && isGuardPath(target, cwd)) return true;
+	}
+	// Destructive verbs on a command line that names a guard file.
+	if (DESTRUCTIVE_RE.test(command)) {
+		if (/\b(?:rm|mv|cp|sed\s+-i|tee)\b/i.test(command)) return true;
+		if (/open\s*\([^)]*['"][wax]/.test(command)) return true;
+	}
+	return false;
+}
+
+function hasWriteIntent(text: string): boolean {
+	return (
+		/(?:^|[\s;&|])-X\s*(?:POST|PUT|PATCH)\b/i.test(text) ||
+		/--request\s+(?:POST|PUT|PATCH)\b/i.test(text) ||
+		/(?:^|\s)(?:-d|--data(?:-raw|-binary|-urlencode)?|--json|-F|--form|-T|--upload-file)\b/.test(text) ||
+		/(?:requests|httpx|session)\.(?:post|put|patch)\s*\(/i.test(text) ||
+		/method\s*[:=]\s*["'](?:POST|PUT|PATCH)["']/i.test(text) ||
+		/\b(?:POST|PUT|PATCH)\b/.test(text)
+	);
+}
 
 const GUARD_ROOT = path.join(os.homedir(), ".pi", "agent", "extensions", "platform-guard");
 const GUARD_FILES = [
@@ -66,8 +91,26 @@ export function hasSubmissionIntent(text: string): boolean {
 	return SUBMISSION_PATHS.some((p) => s.includes(p));
 }
 
-export function isSanctionedPlatformDo(command: string): boolean {
-	return SANCTIONED_RE.test(command) && !/[;&|]/.test(command);
+function redirectionTargets(command: string): string[] {
+	const out: string[] = [];
+	const re = /(?:^|[^0-9])[12]?>>?\s*("[^"]*"|'[^']*'|[^\s;&|]+)/g;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(command))) out.push(m[1].replace(/^["']|["']$/g, ""));
+	return out;
+}
+
+export function isSanctionedPlatformDo(command: string, cwd = process.cwd()): boolean {
+	if (!SANCTIONED_RE.test(command)) return false;
+	// Do not let a newline or command substitution turn the sanctioned prefix
+	// into a second command.
+	if (/[\r\n`]/.test(command) || /\$\(/.test(command)) return false;
+	if (/[;&|]/.test(command)) return false;
+	// A redirection may write a log, but never a guard/approval file.
+	for (const target of redirectionTargets(command)) {
+		if (/^&[12]$/.test(target)) continue;
+		if (isGuardPath(target, cwd)) return false;
+	}
+	return true;
 }
 
 function expandHome(p: string): string {
@@ -102,7 +145,7 @@ function isGuardText(text: string): boolean {
 
 function scanScriptFile(command: string, cwd: string): Hit | null {
 	const re =
-		/(?:^|[;&|]\s*)(?:"[^"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?"|\S*python\S*|bash|sh|node|pwsh|powershell)\s+(?:-\S+\s+)*["']?([^\s"']+\.(?:py|sh|js|ts|ps1|bat))["']?/gi;
+		/(?:^|[;&|]\s*)(?:"[^"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?"|\S*python\S*|bash|sh|node|pwsh|powershell)\s+(?:-\S+\s+)*["']?([^\s"']+\.(?:py|sh|js|mjs|cjs|ts|ps1|bat|cmd))["']?/gi;
 	let m: RegExpExecArray | null;
 	while ((m = re.exec(command))) {
 		const p = path.resolve(cwd, expandHome(m[1]));
@@ -125,7 +168,7 @@ function scanScriptFile(command: string, cwd: string): Hit | null {
 
 export function analyzeBashCommand(command: string, cwd: string): Hit | null {
 	if (!command.trim()) return null;
-	if (isSanctionedPlatformDo(command)) return null;
+	if (isSanctionedPlatformDo(command, cwd)) return null;
 
 	if (TOKEN_LEAK_RE.test(command)) {
 		return {
@@ -134,14 +177,14 @@ export function analyzeBashCommand(command: string, cwd: string): Hit | null {
 		};
 	}
 
-	if (isGuardText(command) && GUARD_WRITE_RE.test(command)) {
+	if (tamperHit(command, cwd)) {
 		return {
 			kind: "guard-tamper",
 			reason: "命令试图修改 platform-guard / platform_do / approval 文件；这些文件只能由用户手动改",
 		};
 	}
 
-	if (hasPlatformHost(command) && hasSubmissionIntent(command)) {
+	if (hasPlatformHost(command) && hasSubmissionIntent(command) && hasWriteIntent(command)) {
 		return {
 			kind: "raw-platform-submit",
 			reason: "命令直接对平台 flag 提交接口发请求（/submissions 或 /qa/submissions）",
@@ -203,7 +246,7 @@ export function analyzeToolCall(toolName: string, input: any, cwd: string): Hit 
 			}
 		}
 		const text = parts.join("\n");
-		if (/\.(?:py|sh|js|ts|ps1|bat|cmd)$/i.test(p) && hasPlatformHost(text) && hasSubmissionIntent(text)) {
+		if (/\.(?:py|sh|js|mjs|cjs|ts|ps1|bat|cmd)$/i.test(p) && hasPlatformHost(text) && hasSubmissionIntent(text)) {
 			return {
 				kind: "raw-platform-submit-script",
 				reason: "写入的脚本里包含对平台 flag 提交接口的直接调用；请用 bin/platform_do.py",
