@@ -11,6 +11,8 @@
  *   /wb-update  显示更新计划，确认后执行（备份 + 本地改动保留）
  *
  * 关闭自动检查：PI_UPDATE_CHECK=off（命令仍然可用）。
+ * 本机带 `.update-hold` 时视为“配置源头”：不提示、不跟随仓库版本，
+ * 本地改动用仓库里的 scripts/publish.py 推上去。
  * 这个扩展只读版本字符串；升级必须经过 /wb-update 的确认框。
  */
 import { execFile } from "node:child_process";
@@ -31,6 +33,7 @@ const NOTIFY_TTL_MS = 24 * 3600 * 1000;
 
 type CheckInfo = {
 	status: "update_available" | "content_diff" | "up_to_date" | "unknown_local" | "offline" | string;
+	hold?: boolean;
 	local?: string | null;
 	remote?: string | null;
 	cached?: boolean;
@@ -165,6 +168,11 @@ export default function (pi: ExtensionAPI) {
 		void (async () => {
 			const info = await checkNow(false);
 			if (!info || !ctx.hasUI) return;
+			// .update-hold = 配置源头：本机才是最新，不提示跟随仓库
+			if (info.hold) {
+				ctx.ui.setStatus(STATUS_KEY, undefined);
+				return;
+			}
 			if (info.status === "update_available" && info.remote) {
 				ctx.ui.setStatus(STATUS_KEY, `wb ↑ ${info.remote}`);
 				if (shouldNotify(notifyKey(info))) {
@@ -197,6 +205,13 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("版本检查失败：检查器没有返回结果（看 ~/.pi/agent/bin/workbench_update.py）", "error");
 				return;
 			}
+			if (info.hold) {
+				ctx.ui.notify(
+					`本机是配置源头（.update-hold）：本地 ${info.local} / 仓库 ${info.remote || "?"}。发布本地改动用 scripts/publish.py`,
+					"info",
+				);
+				return;
+			}
 			ctx.ui.notify(describe(info), "info");
 			if (actionable(info)) {
 				ctx.ui.setStatus(
@@ -217,6 +232,13 @@ export default function (pi: ExtensionAPI) {
 			const info = await checkNow(true);
 			if (!info) {
 				ctx.ui.notify("版本检查失败，未执行升级", "error");
+				return;
+			}
+			if (info.hold) {
+				ctx.ui.notify(
+					"本机带 .update-hold（配置源头），拒绝用仓库覆盖本地。发布本地改动：python scripts/publish.py",
+					"warning",
+				);
 				return;
 			}
 			if (info.status === "up_to_date") {

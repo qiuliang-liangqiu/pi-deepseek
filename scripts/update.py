@@ -199,6 +199,11 @@ def smoke(agent: Path) -> list[tuple[str, bool]]:
                 continue
             has = (d / "index.ts").is_file() or (d / "index.js").is_file()
             out.append((f"ext {d.name}", has))
+        checker = bin_dir / "check_extensions.mjs"
+        node = shutil.which("node")
+        if checker.is_file() and node:
+            ok, _detail = _run_ok([node, "--no-warnings", str(checker), str(ext_root)])
+            out.append(("ext parse", ok))
     else:
         out.append(("extensions/", False))
 

@@ -405,6 +405,7 @@ def check(agent: Path, force: bool, timeout: float) -> dict:
     vcmp = compare(remote, local) if remote and local else None
     info = {
         "agent": str(agent),
+        "hold": (agent / ".update-hold").exists(),
         "local": local,
         "remote": remote,
         "url": url,

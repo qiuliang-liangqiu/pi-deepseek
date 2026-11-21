@@ -233,6 +233,13 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
 - **版本/CVE 题先查公开情报**（允许外网时）：NVD/cveawg → 修复 commit diff → 官方 regression test 的触发字节 → 公开 PoC 仓库（`CVE-xxxx`、`<product>2shell`）。白盒不等于闭门造车；纯手推 20–30 分钟无进展就切情报线（复盘见 `ctfy-engagement-pwn` skill 第 7 节）。
 - 行为准则见 skill 内的 `DOCTRINE.md`（四步推演、Recon/Exploit 双工、连续 2 次失败必换链、回显只留关键事实）。
 - **分配比速度重要**（`DOCTRINE.md` §9，2026-11-16/18 实测）：手不慢——成功 stint 中位 5.3/4.1 min，但失败 stint 会吃掉 2/3 时间。四条默认为：① 12–15 分钟无新原语 → 三行笔记 + 关箱；② 不在打的箱不空挂（并发槽只给后台任务）；③ 重开前先读笔记写“这次的不同点”；④ **解出后按 `is_completed`/`flag_total` 找剩余 flag**：单 flag 10 秒关，多 flag 继续到完成；不要固定“2 flags/3–5 分钟”；最后 45 分钟不开新侦察。（**仅多题短周期**；单题深链不套用；闸门按“无新原语”不按总时长。）每轮跑完用 `skills/tsec-bench-run/tools/analyze_events.py run-*-events.csv` 量化复盘；现在它会同时报 unique 解、flags、总分，重开分母按“首开/额外开箱”分开。
+- **复盘沉淀（2026-11-21，g-01..g-40 全清 20800/20800）**：完整手册在本地 `~/.pi/agent/playbooks/benchmark-retro-2026-11-21.md`（复盘不入库）。三条最高回报纪律：
+  ① **服务交互先验“输入契约”**（`int()` / `int(x,16)` / raw line / hex / 截断），先发最小可判别对（`10` vs `0x10`、`0` vs `00`）；一次进制误读能废掉 1 小时（g-26 实测）。
+  ② **写“不可解”前必须过 5 问**：构造性攻击（碰撞/差分/预映像）/ 我是否误读 oracle / 全局代数（CRT·理想·商环·格·线性码）/ 侧信道（时序·长度·奇偶·错误差异）/ 参数与线上是否一致。任一条未验不得结论；本轮曾误判 1 例（g-24 的 FPR=1e-231 是真的，正解是 MurmurHash3 seed-无关差分碰撞）。
+  ③ **噪声/多值 oracle 先翻译成“不变量”**（次数、奇偶、和差、模态）再线性化：g-01 用 `K=k·x^16, deg K<528` + CRT 幂等 → 1600×1596 GF(2) 线性（秩 1586，零空间 5，枚举即出）；g-26 用 `端点(x+y)%2 = 路径长度 = ⌈bitlen/2⌉` → `B=2^1022` 阈值预言机 121 轮二分。
+- **禁止原题指纹/查官方 writeup 取解**（用户 2026-11-21 明确）：平台自己放的源站/附件是题目的一部分，可以用；原题仓库、官方 solver、writeup 一律不许用于得分。
+- **提交与证据**：容器必须 running 才能提交（统一 `submit.py`：start→submit→close）；**二进制里的字面量 flag 不可信**（g-25 的 rodata 字面量被平台拒收），只认运行中服务的输出。
+- **子代理证据纪律**：只信 `teams/<code>/result-*.md` 与 `flag.txt`；`candidate-*.txt` 常因 worker 读旧 result 文件而误报旧题 flag，提交前必须本人复核；worker 报 SOLVED 也要看证据类型。
 
 ## 缺工具时怎么做（tool-check）
 
