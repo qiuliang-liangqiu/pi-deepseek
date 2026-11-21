@@ -43,7 +43,7 @@ description: "TSecBench sandbox contract and hard rules: BENCHMARK tools, three 
    credential, error class, oracle answer or payload stage → three lines of
    notes and close. New facts → `touch_challenge(code, what)` and continue.
 4. **30-minute triage (enforced)**: 3 lanes, one box each, 30–60 s per
-   challenge with `C:/Users/30367/.pi/agent/bin/triage.sh`; A/B/C/D; all 50 shallow. A box
+   challenge with `%USERPROFILE%/.pi/agent/bin/triage.sh`; A/B/C/D; all 50 shallow. A box
    opened in the phase is `TRIAGE` and the harness closes it at 120 s;
    auto-recon is off. If all open cards exist before 30 min, call
    `triage_complete` and start A→B early. Backlog is a soft suggestion at 50%

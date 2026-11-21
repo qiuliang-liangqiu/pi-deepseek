@@ -44,7 +44,7 @@ python -m framework.cli skip a-03 "/login GET/POST 恒 500，应用未初始化"
 python -m framework.cli skips
 
 # 2) 指纹识别（手工打之前先看一眼）
-python -m framework.cli scan 10.0.185.216:80
+python -m framework.cli scan <host:port>
 
 # 3) 一键跑（自动 playbooks，命中即提交）
 python -m framework.cli auto xben-005-24

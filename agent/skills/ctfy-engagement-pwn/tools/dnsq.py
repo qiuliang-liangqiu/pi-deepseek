@@ -1,8 +1,17 @@
-"""Resolve A records via DNS-over-TCP to the tunnel resolver (through SOCKS)."""
-import struct, socket, sys
+"""Resolve A records via DNS-over-TCP to the tunnel resolver (through SOCKS).
+
+Tunnel resolver address comes from `CTFY_DNS_SERVER` (needed when the SOCKS
+tunnel has no DNS configured); pass `server=` to override per call.
+
+    CTFY_DNS_SERVER=<tunnel-dns> python dnsq.py node1.example.internal
+"""
+import os, struct, socket, sys
 from socks import connect
 
-def q(name, server="172.16.255.3", port=53, timeout=6):
+def q(name, server=None, port=53, timeout=6):
+    server = server or os.environ.get("CTFY_DNS_SERVER", "").strip()
+    if not server:
+        raise SystemExit("set CTFY_DNS_SERVER=<tunnel-dns> or pass server=...")
     tid = 0x1234
     hdr = struct.pack(">HHHHHH", tid, 0x0100, 1, 0, 0, 0)
     qn = b"".join(bytes([len(p)])+p.encode() for p in name.split(".")) + b"\x00"

@@ -29,7 +29,7 @@ If handing off to another agent (e.g., reviewer), include:
 本节优先于上面的通用输出格式。
 
 ## 0. 先做三件事
-1. `read C:/Users/30367/.pi/agent/skills/tsec-bench-run/SKILL.md`（纪律、工具、分层时间盒）+ `E:/pi/2/docs/SOP.md`。
+1. `read %USERPROFILE%/.pi/agent/skills/tsec-bench-run/SKILL.md`（纪律、工具、分层时间盒）+ `<workbench>/2/docs/SOP.md`。
 2. `python work/check-skip.py <code>` 或 `grep -i <code> work/SKIP.txt` —— 坏题只验一次。
 3. `read work/<code>/NOTES.md`（若存在）—— 上一棒的交接，**不要重做已完成的事**。
 

@@ -61,11 +61,24 @@ const TRUSTED_ROOTS = [
 	path.join(os.homedir(), ".pi", "agent", "knowledge"),
 	path.join(os.homedir(), ".pi", "agent", "prompts"),
 	path.join(os.homedir(), ".pi", "agent", "AGENTS.md"),
-	path.resolve("E:/pi/2/framework"),
-	path.resolve("E:/pi/2/docs"),
-	path.resolve("E:/pi/ctfy"),
-	path.resolve("E:/pi/自检代码"),
 ];
+
+// 本地 checkout 的辅助目录（framework / docs / ctfy / 自检代码）从 PI_WORKBENCH 推导：
+// <repo>/toolbox -> <repo> -> <workbench-parent>。仓库里不写死任何绝对路径。
+const WORKBENCH_PARENT = (() => {
+	const wb = (process.env.PI_WORKBENCH || "").trim();
+	if (!wb) return "";
+	try {
+		return path.dirname(path.dirname(path.resolve(wb)));
+	} catch {
+		return "";
+	}
+})();
+if (WORKBENCH_PARENT) {
+	for (const sub of ["2/framework", "2/docs", "ctfy", "自检代码"]) {
+		TRUSTED_ROOTS.push(path.join(WORKBENCH_PARENT, sub));
+	}
+}
 
 function isTrustedRead(event: { toolName?: string; input?: any }): boolean {
 	if (event.toolName !== "read") return false;

@@ -12,12 +12,12 @@
 
 1. 只操作 `{CODE}` 这一道题，目标 `{HOST}:{PORT}`。
    **绝不** `start` 任何其它 code —— 平台并发上限 3，抢名额会让队友吃 `409 max active`。
-2. 所有框架命令先 `cd E:/pi/2`，然后 `python -m framework.cli ...`；需要 token 时用环境变量 `TSEC_TOKEN`。
+2. 所有框架命令先 `cd <workbench>/2`，然后 `python -m framework.cli ...`；需要 token 时用环境变量 `TSEC_TOKEN`。
 3. **本机没有** nuclei / ffuf / gobuster / docker，也**没有** `/opt/wordlists`、`/root/nuclei-templates`、CVE 全文库。
    不要调用它们，不要"假装有"。你要的武器库实际是：
    - `python -m framework.cli scan {HOST}:{PORT}` —— 指纹族
-   - `E:/pi/2/framework/playbooks.py` —— 8 条现成打法（static/静态路径、Django SSTI、Dalgona XSS、SSRF、FastAPI jobs、ping 注入、LFI、JWT none）
-   - `E:/pi/2/framework/payloads.py` + `E:/pi/2/docs/PLAYBOOK.md` —— 按指纹查 payload
+   - `<workbench>/2/framework/playbooks.py` —— 8 条现成打法（static/静态路径、Django SSTI、Dalgona XSS、SSRF、FastAPI jobs、ping 注入、LFI、JWT none）
+   - `<workbench>/2/framework/payloads.py` + `<workbench>/2/docs/PLAYBOOK.md` —— 按指纹查 payload
 4. **不要输出 `ACTION xxx` 语法**。那是训练期标签语言，本机没有解释器，写了不会执行任何东西。
 5. **零公网请求**：不 curl 任何外网域名/搜索/在线 PoC 站。
 6. 所有 HTTP 请求**带浏览器 UA**：`-A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36'`
@@ -28,13 +28,13 @@
 
 **S0 指纹（≤60s）**
 ```bash
-cd E:/pi/2 && python -m framework.cli scan {HOST}:{PORT}
+cd <workbench>/2 && python -m framework.cli scan {HOST}:{PORT}
 curl -sS -i -A '{UA}' http://{HOST}:{PORT}/ | head -40
 ```
 
 **S1 先跑现成打法（≤3min，最高性价比）**
 ```bash
-cd E:/pi/2 && python -c "
+cd <workbench>/2 && python -c "
 from framework import playbooks, recon
 t = playbooks.Target('{HOST}', {PORT})
 print('fp:', recon.fingerprint('{HOST}', {PORT}).get('families'))
@@ -58,7 +58,7 @@ print('flag:', flag, '| hit:', hit)
 **S3 目录枚举（只在 S2 无收获时，≤3min）**
 用 python + 内置小字典并发扫，**不要**依赖外部字典：
 ```bash
-cd E:/pi/2 && python -c "
+cd <workbench>/2 && python -c "
 import requests
 H='{HOST}';P={PORT}
 UA={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0'}
