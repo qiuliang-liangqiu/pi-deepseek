@@ -1,4 +1,6 @@
-# pi-agent workbench
+# pi-deepseek-v1.1 · pi-agent workbench
+
+> 当前版本 **1.1.0**（`agent/VERSION`）。
 
 跑在 [pi](https://pi.dev) 上的 CTF / 靶场智能体工作台：把「止损纪律」写成可执行代码，
 把每次跑分的经验沉淀成 skill、playbook 与复盘模板。
