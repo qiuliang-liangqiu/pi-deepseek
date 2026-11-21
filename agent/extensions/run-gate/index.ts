@@ -145,8 +145,7 @@ export default function runGate(pi: ExtensionAPI) {
 		try {
 			const dir = path.join(ROOT, "teams", ".pi-pids");
 			fs.mkdirSync(dir, { recursive: true });
-			fs.writeFileSync(path.join(dir, String(process.pid)), SESSION_ID + "
-", "utf8");
+			fs.writeFileSync(path.join(dir, String(process.pid)), SESSION_ID + "\n", "utf8");
 		} catch {
 			// best effort
 		}
