@@ -207,7 +207,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (info.hold) {
 				ctx.ui.notify(
-					`本机是配置源头（.update-hold）：本地 ${info.local} / 仓库 ${info.remote || "?"}。不会自动跟随仓库`，
+					`本机是配置源头（.update-hold）：本地 ${info.local} / 仓库 ${info.remote || "?"}。不会自动跟随仓库`,
 					"info",
 				);
 				return;
