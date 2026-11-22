@@ -7,7 +7,7 @@
     python scripts/build_manifest.py            # 写入 agent/.workbench.json
     python scripts/build_manifest.py --check    # 只比较，不写；不一致 exit 1
 
-发布流程里由 scripts/publish.py 自动调用；手工发版时记得重新生成，否则别人会
+发布流程会自动调用本脚本；手工发版时记得重新生成，否则别人会
 看到假的 content_diff。
 """
 from __future__ import annotations

@@ -12,7 +12,7 @@
  *
  * 关闭自动检查：PI_UPDATE_CHECK=off（命令仍然可用）。
  * 本机带 `.update-hold` 时视为“配置源头”：不提示、不跟随仓库版本，
- * 本地改动用仓库里的 scripts/publish.py 推上去。
+ * 本地改动由本机自己的发布工具推出（不随仓库分发）。
  * 这个扩展只读版本字符串；升级必须经过 /wb-update 的确认框。
  */
 import { execFile } from "node:child_process";
@@ -207,7 +207,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (info.hold) {
 				ctx.ui.notify(
-					`本机是配置源头（.update-hold）：本地 ${info.local} / 仓库 ${info.remote || "?"}。发布本地改动用 scripts/publish.py`,
+					`本机是配置源头（.update-hold）：本地 ${info.local} / 仓库 ${info.remote || "?"}。不会自动跟随仓库`，
 					"info",
 				);
 				return;
@@ -236,7 +236,7 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (info.hold) {
 				ctx.ui.notify(
-					"本机带 .update-hold（配置源头），拒绝用仓库覆盖本地。发布本地改动：python scripts/publish.py",
+					"本机带 .update-hold（配置源头），拒绝用仓库覆盖本地。需要发布时用本机自己的工具。",
 					"warning",
 				);
 				return;

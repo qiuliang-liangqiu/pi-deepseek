@@ -41,3 +41,4 @@ agent/*.bak-*
 agent/run_gate.json
 agent/platform-audit.jsonl
 toolbox/2/
+scripts/publish.py
