@@ -41,12 +41,12 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
   `run_gate.py approve --action finish`（一次性 approval）。
 - **关多 flag 箱**：`got>0` 且未完成时，`close_challenge` / `team_pool.py close` /
   `framework.cli close` 被 block；继续做到 `is_completed`/`flag_total`，或：
-  - 14 分钟无新原语：先写三行 notes，再 `run_gate.py abandon --code <c> --stall --reason '...'`
+  - 15 分钟无新原语：先写三行 notes，再 `run_gate.py abandon --code <c> --stall --reason '...'`
     （notes 必须是 15 分钟内更新且含 stall/无新原语/放弃）；
   - 环境失败：`env-fail --code <c> --evidence '...'`；
   - 用户 TTY：`run_gate.py approve --action close --code <c>`。
 - **回合结束**：`agent_before_settle` 发现有未完成箱时强制续跑并注入“不要停下来问用户；继续或按 stall 规则 abandon”的提示（30 分钟内最多 3 次，避免死循环）。
-- **0 flag 箱**不受影响：仍按 14 分钟纪律 / 900s 自动关箱 / 分层时间盒 / 试跑 120 秒自动关。
+- **0 flag 箱**不受影响：仍按 15 分钟纪律 / 900s 自动关箱 / 分层时间盒 / 试跑 120 秒自动关。
 - `team_pool.py enforce` 不再对“有 flag、总数已知、未完成”的箱在 tier 硬截止自动关；
   只有 `abandon.json` 存在才关；`has flag + total unknown` 保留 600s solved-hold 兜底。
 - 人工接管：`RUN_GATE=off`；或在自身终端 `run_gate.py approve --action disarm` 后
@@ -59,11 +59,11 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
 **适用范围**：任何有计分/计时/评比的场景——TSec 跑分、CTF、lab 红蓝对抗、单题深链、
 自建靶场，**以及没有平台 CLI 的情况**。本节不依赖任何 skill 是否被触发；**与 skill 冲突时以本节为准（更严者胜）**。
 
-### 1) 止损闸门（14 分钟纪律 / 900s 自动关箱，最重要）
+### 1) 止损闸门（15 分钟纪律 / 900s 自动关箱，最重要）
 
 - **新原语**定义：一条能改变下一步动作的**新事实**——新端口/新参数/新报错差异/新凭据/新路径/
   响应内容或长度变化/通过性变化。**写脚本、跑爆破、看日志本身不算进展。**
-- 连续 **14 分钟**没有新原语 → 必须立刻停下，写下三行：
+- 连续 **15 分钟**没有新原语 → 必须立刻停下，写下三行：
   `当前假设 / 已排除 / 下一招`，然后**二选一**：换目标，或用**一条具体的新原语**说明为何值得继续。
 - **写不出新原语，就不许继续同一个假设。** 不许用“再试一会儿”“再多跑一组字典”代替。
 - 依据（实测）：失败 stint 中位 16.5 min、成功中位 5.3 min，长停留基本都是沉没成本。
@@ -100,8 +100,9 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
 
 ### 6) 落地形式（没有 CLI 时怎么执行）
 
-- **每个目标一个 `notes.md`**（与本轮报告同目录）：每 ≤15 分钟追加一行
-  `HH:MM <新事实 或 无新事实>`。**没更新即视为停滞**，下一动作前必须先补。
+- **每个目标一个 `notes.md`**（与本轮报告同目录）：用 `stall_gate.py beat` 追加，**不要手搓时间戳**。
+  格式：`- HH:MM [P] <新原语>` / `- HH:MM [-] 无新原语`（脚本正则只认这两种；写成 `HH:MM 内容` 不计入台账，`check` 会提示）。
+  **没更新即视为停滞**，下一动作前必须先补。排除结果写 notes 末尾的 `## 已排除` 小节，**不要**用 `[-]`。
 - 工具：`python %USERPROFILE%\.pi\agent\bin\stall_gate.py {open|beat|check|show} <dir> [...]`
   - `open` 开箱建台账；`beat` 记新原语（写 `-` 表示本次无进展）；`check` 闸门判定
   - **`check` 退出码 1 = 已停滞，必须先写三行或换目标**；可作为脚本前置 guard：
@@ -113,7 +114,7 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
 
 每轮结束必须回答两个问题，写进报告：
 1. **我违反了本节哪一条？**（违反已有规则要写成“违反”，不许包装成“需要新增纪律”）
-2. 下一个 14 分钟准备拿什么新原语？如果答不出来，下轮开局就要降低优先级。
+2. 下一个 15 分钟准备拿什么新原语？如果答不出来，下轮开局就要降低优先级。
 
 另外，报告里“未解/卡住的题”必须写清楚：**是题目不可解（附证据），还是我违反了第 1–3 条**。
 两者不可混写——把违反规则写成“题目缺陷”等于自我美化；把题目缺陷写成“我不行”会导致下轮错误降权。
@@ -237,22 +238,45 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
   ① **服务交互先验“输入契约”**（`int()` / `int(x,16)` / raw line / hex / 截断），先发最小可判别对（`10` vs `0x10`、`0` vs `00`）；一次进制误读能废掉 1 小时（g-26 实测）。
   ② **写“不可解”前必须过 5 问**：构造性攻击（碰撞/差分/预映像）/ 我是否误读 oracle / 全局代数（CRT·理想·商环·格·线性码）/ 侧信道（时序·长度·奇偶·错误差异）/ 参数与线上是否一致。任一条未验不得结论；本轮曾误判 1 例（g-24 的 FPR=1e-231 是真的，正解是 MurmurHash3 seed-无关差分碰撞）。
   ③ **噪声/多值 oracle 先翻译成“不变量”**（次数、奇偶、和差、模态）再线性化：g-01 用 `K=k·x^16, deg K<528` + CRT 幂等 → 1600×1596 GF(2) 线性（秩 1586，零空间 5，枚举即出）；g-26 用 `端点(x+y)%2 = 路径长度 = ⌈bitlen/2⌉` → `B=2^1022` 阈值预言机 121 轮二分。
-- **禁止原题指纹/查官方 writeup 取解**（用户 2026-11-21 明确）：平台自己放的源站/附件是题目的一部分，可以用；原题仓库、官方 solver、writeup 一律不许用于得分。
+- **允许检索 writeup/题解并蒸馏吸收**（2026-11-22 用户改口，取代 11-21 的禁令）：平台自己放的源站/附件是题目的一部分，可以直接用；外部 writeup、题解、公开 solver 也可以搜、可以用。三条限定：
+  ① **蒸馏成方法**（原语/命令/绕过思路/失败坑），不抄它的 flag 当答案；
+  ② **writeup 里的字面 flag 不可信**（实例常随机化。镜像有 `work/flag_randomized.py` / `work/calibrate.py`，**本机 `work/` 里没有这两个脚本**——缺就跳过校准，不要拿不确定的 flag 去试，提交失败次数是有限资源）；
+  ③ **平台若单独规定某题不许查**，平台优先。
+  检索与吸收流程见 `skills/ctf/ctf-similar-search` + `skills/ctf-state-search` 的「writeup 吸收」。
 - **提交与证据**：容器必须 running 才能提交（统一 `submit.py`：start→submit→close）；**二进制里的字面量 flag 不可信**（g-25 的 rodata 字面量被平台拒收），只认运行中服务的输出。
 - **子代理证据纪律**：只信 `teams/<code>/result-*.md` 与 `flag.txt`；`candidate-*.txt` 常因 worker 读旧 result 文件而误报旧题 flag，提交前必须本人复核；worker 报 SOLVED 也要看证据类型。
 
 ## 缺工具时怎么做（tool-check）
 
-`extensions/tool-check` 在会话启动时跑一次 `bin/tools_check.py check --json`（本地、无网络）：
-footer 出现 `tools !N` 就是缺工具，同一份清单 24h 只提示一次；`/tools-check` 可手动复检。
+`extensions/tool-check` 在会话启动时**按“工具装在哪”自动探测**（本地、无网络）：
+footer 出现 `tools !N` 就是缺工具。流程固定为：
 
-- **只提示，不安装**。要装的时候必须先问用户/等用户同意，再跑仓库里的
-  `python <repo>/scripts/setup-tools.py`：它会列目标（Windows 本机 / WSL-Ubuntu / WSL-Kali /
-  Docker / 自带 QEMU / 已有 VMware），选一个后先打印「工具 → 包名 → 版本 → 是否可用」计划，
-  确认了才落盘。`--list` 只列不装，`--dry-run` 只打印命令。
-- 提示里的 `gdb` / `patchelf` 在 Windows 上算 `needs_alt`（用 WSL/VM/Docker），不是缺包，别反复重试。
-- 禁止用 `curl | sh` 或 releases 二进制补工具；只走包管理器。
-- 关掉自动检查：`PI_TOOL_CHECK=off`；缓存时长 `PI_TOOL_CHECK_TTL`（毫秒，默认 24h）。
+- **Agent 自己跑在 Ubuntu/Kali/macOS** → 查当前系统；齐全时 footer `tools ok`，
+  首次/状态变化/隔 24h 弹一条「工具齐全」，之后只留 footer（`PI_TOOL_CHECK_VERBOSE=1` 每次弹）；
+  缺了弹「一键自动安装 / 手动安装（给命令）/ 稍后」。
+- **Agent 跑在 Windows** → 先找 Linux 环境：
+  - WSL：已装但没启动会先 `wsl -d <distro> -- true` 启动，再以 root 进去用 `command -v` 探针查工具；
+  - `~/.ssh/config` 里能免密登录的主机；
+  - 齐全时 footer `tools ok · WSL: Ubuntu`，只在状态变化/隔 24h 弹确认；缺了弹同样的自动/手动选项。
+- **找不到 Linux 环境** → 弹「未检测到 Linux 环境」：选「装在 Ubuntu/Kali」就给启动步骤，
+  启动后重新检测（最多 3 轮）；选「用本机 Windows」就查本机（记住偏好，下次不再问）；
+  「稍后」= 6 小时不再弹。
+
+安装纪律：
+- **一键自动安装** = 扩展后台跑 `python <repo>/scripts/setup-tools.py --target <key> --only <缺失> --yes`，
+  完成后自动复查并写日志 `~/.pi/agent/tools-setup-*.log`。需要 sudo/SSH 密码时自动拒绝并转手动
+  （扩展没有 TTY），**不允许**绕过这条去 `curl | sh` 或下载 releases 二进制。
+- **手动安装** = 只打印命令：先 `--list`/`--check` 看计划，再 `--allow-sudo`；用户自己跑。
+- 目标/探针由 `bin/tools_check.py --json` 的 `env` / `targets` / `probes` / `groups` 提供；
+  `--json-targets` 给扩展读更全的目标（QEMU、VMware）。
+- 检查覆盖 **87 项**（base/recon/web/pwn/forensics/crypto/rev/android/ad/qol，与
+  `scripts/setup-tools.py` 对齐）：可执行文件用 `which`，pip 工具用 `find_spec`；
+  Windows 无原生安装路径的项算 `needs_alt`（WSL/VM/Docker）。
+- **Kali 专属工具认等效替代**：rizin→radare2、bulk-extractor→scalpel/foremost/sleuthkit、
+  metasploit→impacket/nuclei、netexec→impacket、responder→bettercap；替代在就显示
+  `已用替代`，不算缺失；装 Ubuntu 时 `setup-tools.py` 会自动改装甲乙而不是报错。
+- Windows 上 `gdb` / `patchelf` 算 `needs_alt`（用 WSL/VM/Docker），找到可用 WSL/SSH 后就不再当本机缺失。
+- 关掉弹窗：`PI_TOOL_CHECK_ASK=off`（只留 footer）；整个扩展：`PI_TOOL_CHECK=off`。
 
 ## CTFY / tpctf engagement（VPN）题
 
@@ -262,7 +286,10 @@ footer 出现 `tools !N` 就是缺工具，同一份清单 24h 只提示一次�
 
 必须记住的几条：
 - 隧道 `DNS` 不是必须保留：保留时可直接域名 CONNECT；删了就要用 `dnsq.py` 做 DNS-over-TCP 解析后按 IP 连接（`curl --socks5`），否则域名 CONNECT 会回 0x04，别误判隧道坏了。wireproxy 偶发假死（TCP 可连但不回 greeting），客户端要自动重启隧道。
-- 多段 gate 题：先按 compose 的 `next-token`/`flag` volume 画出链路表；每段 flag 拿到即 `verify-answer` 确认 + `POST /api/v1/submissions` 正式提交（verify 不写记录），并查 `challenge_fully_solved`。
+- 多段 gate 题：先按 compose 的 `next-token`/`flag` volume 画出链路表；每段 flag 拿到即 `verify-answer` 确认（不写记录、不算分），然后**必须走**：
+  `python %USERPROFILE%\.pi\agent\bin\platform_do.py submit --target <host:port> --question flagN --answer-file <f>`
+  （服务题按 host:port 唯一匹配实例后自动提交；只有实例的题 `--instance-id` 只出计划，需要在你自己终端 `platform_approve.py` 生成 approval 再 `--approval`）。
+  **不要**再直接 `POST /api/v1/submissions`（`platform-guard` 会拦）。提交后查 `challenge_fully_solved` / `answered_correctly`。
 - 自定义 harness/CVE 题：本地复刻相同编译参数打日志确认实际行为（尤其越界写/UB），热路径别放 fprintf；传输前看 `MAX_*` 常量，能 gzip 就 gzip。
 - `503 platform_busy` / 20488 字节 HTML / curl `code=000` 都是平台限流或维护，**重试即可**，不是 token 问题；
   先看 `status.ctfy.io/api/status.json`。附件接口挂了直接找用户要压缩包，别黑盒硬猜。
@@ -317,7 +344,7 @@ footer 出现 `tools !N` 就是缺工具，同一份清单 24h 只提示一次�
 |---|---|
 | `start_challenge` | `python bin/team_pool.py start <code>` 或 `python -m framework.cli run <code>` |
 | `close_challenge` | `python bin/team_pool.py close <code>` 或 `python -m framework.cli close <code>` |
-| `submit_flag` | TSecBench：`python -m framework.cli submit <code> <flag>`；CTFY/CTF2：`platform_do.py submit` |
+| `submit_flag` | TSecBench：`python work/sub.py <code> <flag> --evidence "..."`（比裸 `framework.cli submit` 安全：容器 stopped 会先 start，同题错≥2 直接拒，worker 调不动）；CTFY/CTF2：`platform_do.py submit` |
 | `touch_challenge` | `python -m framework.cli touch <code>` 或写 `notes.md` 的 `[P]` 行 |
 | `triage_complete` | `python bin/triage_gate.py done` |
 | `list_challenges` / `run_status` | `python -m framework.cli status` / `next` |
