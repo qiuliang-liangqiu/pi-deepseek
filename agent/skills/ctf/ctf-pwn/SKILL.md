@@ -115,6 +115,31 @@ python3 -c "from pwn import *; print(cyclic_find(0x61616168))"
 ./libc-database/find puts <leaked_addr_last_3_nibbles>
 ```
 
+## Pattern recall（60 秒：信号 → 手法 → 第一个实验）
+
+看到第一个异常信号就先查这张表，细节和“第一个实验”模板见 [pattern-recall.md](pattern-recall.md)。
+
+| 信号 | 第一反应 |
+|---|---|
+| 同一变量既做 malloc 又做 memcpy/read | 长度截断/脱钩：试 0/0x7f/0x80/0xff/0x7fff/0x8000/0xffff/0x10000/0xffffffff |
+| 长度带协商/上限 | 负数/下溢当无符号：令协商值=0，算 `x-常量` |
+| off-by-one 只改 size/低半字节 | 块头半字节写：只放大 size，保留 PREV_INUSE |
+| 删除/关闭只清一张表 | 悬空引用：查所有表/缓存/回调/引用计数 |
+| 缓存键是 `(index, ptr)` | 键少一维：让同一对象换槽号/换容器再操作 |
+| 多线程 + 共享表 + 延迟队列 | 竞态/双 free：灌队列、乱序事件、交错 drop/pickup |
+| tag/union/elements kind | 类型混淆：检查 tag 的分支 vs 用字段的分支；release 下 ASSERT 是空的 |
+| 无回显/只回 OK/连接断 | 1-bit oracle：EPIPE、`error` 尾巴、错误码、时间、MAC/状态校验 |
+| JIT/沙箱/VM | 先箱内 RW（改 backing store），再找 PIE/宿主跳板 |
+| 内核 ioctl/设备/MMIO | 对象生命周期 UAF：建→删→同尺寸占位→旧回调 |
+| seccomp 只给 read/write/exit | 直接 ORW，不要找 system |
+
+四阶梯子：**泄漏 → 任意读 → 任意写 → 控制流**。卡住时先问“差哪一阶”，
+不要重复同一个假设；无回显时先造 oracle，别急着 ROP。
+
+本目录实测坑：长度谎言溢出用固定 `0x11` 填充会写坏相邻 fastbin 块 size；
+改小 top size 前先 malloc 吃掉相邻 fastbin；`0x2831c` 与 `0x28324` 差两条 `ld`；
+`P=A&~0xFFFFFF` 只对 main arena。
+
 ## Source Code Red Flags
 
 - Threading/`pthread` -> race conditions
