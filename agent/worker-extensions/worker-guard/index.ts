@@ -15,6 +15,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const JOB = process.env.TEAM_WORKER_JOB || "";
 const BOX = process.env.TEAM_BOX_DIR || "";
+const ROLE = process.env.TEAM_WORKER_ROLE || "";
 const FLAG_RE = /flag\{[^}\s]{4,}\}/gi;
 const MAX_FLAGS = 10;
 
@@ -138,11 +139,31 @@ function recordFlags(text: string): void {
 	}
 }
 
+/**
+ * Lead 角色硬边界：队长只做管理，不碰目标。
+ * 只允许 team_pool.py 的管理子命令 + 纯本地只读命令；其余（curl/nmap/ffuf/sqlmap/
+ * python requests/nc/ssh/pwntools…）一律 block，避免“队长顺手自己也去打”。
+ */
+const LEAD_CMD = /(?:^|[;&|]\s*)(?:"[^"]*python(?:\d+(?:\.\d+)*)?(?:\.exe)?"|\S*python\S*)\s+(?:-\S+\s+)*["']?\S*team_pool\.py["']?\s+(dispatch|poll|cancel|list|status|doctor)\b/i;
+const LEAD_SAFE = /^(?:ls|dir|mkdir|date|cd|head|tail|grep|wc|sort|cat|pwd)\b/i;
+
+export function leadReason(cmd: string): string | null {
+	if (ROLE !== "lead") return null;
+	const segs = cmd.split(/[\n;]|&&|\|\|?/).map((s) => s.trim()).filter(Boolean);
+	for (const seg of segs) {
+		if (LEAD_CMD.test(seg) || LEAD_SAFE.test(seg)) continue;
+		return `lead may only run team_pool.py dispatch|poll|cancel|list|status|doctor (got: ${seg.slice(0, 80)})`;
+	}
+	return null;
+}
+
 export default function workerGuard(pi: ExtensionAPI) {
 	pi.on("tool_call", async (event: any) => {
 		if (event?.toolName !== "bash") return;
 		const cmd = String(event.input?.command || "");
 		if (!cmd) return;
+		const lead = leadReason(cmd);
+		if (lead) return { block: true, reason: `[worker-guard] ${lead}` };
 		const why = rateReason(cmd);
 		if (why) return { block: true, reason: `[worker-guard] ${why}` };
 	});

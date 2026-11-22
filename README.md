@@ -12,7 +12,7 @@
 这套东西解决的问题很具体：**让 agent 在有限时间里稳定地少犯错**，而不是让模型显得更聪明。
 
 - **规则层 `agent/`** — 直接装进 `~/.pi/agent`。`AGENTS.md` 是总规则（止损闸门与速率纪律、
-  跑分流程、engagement 打法、prompt-injection 防护、路径对照），配套 9 个启用扩展、10 个命令行脚本、23 个 skill 目录、7 个子代理。**这一层不依赖其它目录，可以独立运行。**
+  跑分流程、engagement 打法、prompt-injection 防护、路径对照），配套 10 个启用扩展、11 个命令行脚本、27 个 skill 目录、8 个子代理。**这一层不依赖其它目录，可以独立运行。**
 - **工具层 `toolbox/`** — 跑分 CLI（`framework.cli`，28 个子命令：平台 API、指纹→打法族、
   竞态编排、SKIP/时间盒看门狗、滚动调度）+ `SOP / PLAYBOOK / PITFALLS` 三份文档。
 - **复盘层 `reports/`** — 复盘的结构模板与脱敏规则。
@@ -112,8 +112,11 @@ python scripts/publish.py --yes        # 复制 → 脱敏 → 清单 → bump V
 `platform-guard` 把 flag 提交收敛到一条脚本化通道。规则被绕过 = 代码被改，不是"模型忘了"。
 
 **2. 多 Agent 是一等公民，不是并发包装**
-`team-pool` 按「一箱一队、不跨箱」派发 worker（recon / exploit / verifier），
-job 持久化到 `jobs.json`，worker 结束写 `result-<job>.md` 与候选文件，
+`team-pool` 按「一箱一队、不跨箱」派发：**每个箱一个队长（`lead`，纯管理、不做题）**，
+队长再按题目难度派 1–3 个不同机制的 worker（`recon` / `exploit` / `verifier`）。
+箱子数量不写死：开局 `python bin/team_pool.py capacity` 算出平台可同时开启的容器数
+（env `TSEC_MAX_ACTIVE` > 409 学到的 `work/capacity.json` > 默认 3；单目标模式 = 1），
+主控按这个数开满、一箱一队。job 持久化到 `jobs.json`，worker 结束写 `result-<job>.md` 与候选文件，
 主控不主动 poll 也能在 footer 看到 `team Nr/Md`、`CANDIDATE`、`STALL`、`RECON` 标记；
 看门狗按 completed 10s / 停滞 900s / solved-hold 600s 收箱。
 
@@ -130,7 +133,7 @@ job 持久化到 `jobs.json`，worker 结束写 `result-<job>.md` 与候选文�
 
 ## 为什么用的是 DeepSeek
 
-不是"模型榜单"，是这套配置的**结构性需求**：9 路子代理并发 + 1M 上下文 + 显式思考档位。
+不是"模型榜单"，是这套配置的**结构性需求**：多路（容量自适应）子代理并发 + 1M 上下文 + 显式思考档位。
 
 | 模型 | 输入 $/M | 输出 $/M | 缓存读 $/M | 上下文 | 最大输出 |
 |---|---|---|---|---|---|
@@ -141,7 +144,7 @@ job 持久化到 `jobs.json`，worker 结束写 `result-<job>.md` 与候选文�
 
 1. **缓存读比输入便宜约 50 倍。** 子代理反复读同一份 `AGENTS.md`、同一批 skill、同一份源码，
    命中缓存后的边际成本接近 0 —— 这正是"多开几个 worker 并行试假设"能成立的前提。
-   换成按输入原价计费的组合，9 路并发很快变成奢侈品。
+   换成按输入原价计费的组合，多路并发很快变成奢侈品。
 2. **1M 上下文 / 384K 单次输出，让"不压缩"成为默认策略。** compaction 会丢掉"已排除"的结论，
    那不是省钱，是把前面 20 分钟的判断重新买一遍。
 3. **思考档位是按阶段调的。** pi 对 DeepSeek 有专门适配（`thinkingFormat: "deepseek"`、

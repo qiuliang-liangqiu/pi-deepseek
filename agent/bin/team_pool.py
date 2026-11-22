@@ -68,8 +68,62 @@ PI_LAUNCHER = ROOT / "bin" / "pi-launcher.js"
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 TRIAGE_PROBE = float(os.environ.get("TBENCH_TRIAGE_PROBE_S", "120"))
 TRIAGE_RESTART_AFTER = float(os.environ.get("TEAM_TRIAGE_RESTART_AFTER", "21600"))
-MAX_PER_BOX = int(os.environ.get("TEAM_MAX_PER_BOX", "3"))
-MAX_TOTAL = int(os.environ.get("TEAM_MAX_TOTAL", "9"))
+MAX_PER_BOX = int(os.environ.get("TEAM_MAX_PER_BOX", "4"))
+MAX_TOTAL = int(os.environ.get("TEAM_MAX_TOTAL", "0") or 0)  # 0 = 自动（按平台容量 × 每箱上限）
+
+
+def _capacity_candidates():
+    out = []
+    wd = os.environ.get("TSEC_WORKDIR")
+    if wd:
+        out.append(Path(wd) / "capacity.json")
+    wb = os.environ.get("PI_WORKBENCH")
+    if wb:
+        out.append(Path(wb) / "work" / "capacity.json")
+    extra = os.environ.get("TEAM_CAPACITY_FILE")
+    if extra:
+        out.append(Path(extra))
+    return out
+
+
+def platform_capacity():
+    """返回 (可同时开启的容器数, 来源)。
+
+    优先级：显式 env > 平台 409 学到的 capacity.json > 平台默认 3。
+    没有平台凭据 = 单目标模式（用户只给一个题目+端口），返回 1。
+    """
+    env = (os.environ.get("TSEC_MAX_ACTIVE") or os.environ.get("BENCHMARK_MAX_ACTIVE") or "").strip()
+    if env:
+        try:
+            n = int(env)
+            if n > 0:
+                return n, "env"
+        except ValueError:
+            pass
+    if not (os.environ.get("BENCHMARK_BASE_URL") or os.environ.get("TSEC_BASE_URL")):
+        return 1, "single-target"
+    best = 0
+    for p in _capacity_candidates():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for v in data.values():
+            n = v if isinstance(v, int) else (int(v.get("max_active") or 0) if isinstance(v, dict) else 0)
+            best = max(best, int(n or 0))
+    if best > 0:
+        return best, "cache"
+    return 3, "default"
+
+
+def max_total():
+    """总 worker 上限：显式 TEAM_MAX_TOTAL 优先，否则 平台容量 × 每箱上限。"""
+    if MAX_TOTAL > 0:
+        return MAX_TOTAL
+    boxes, _ = platform_capacity()
+    return max(boxes, 1) * MAX_PER_BOX
 DEFAULT_JOB_TIMEOUT = float(os.environ.get("TEAM_JOB_TIMEOUT", "1800"))
 ORPHAN_KILL_S = float(os.environ.get("TEAM_ORPHAN_KILL_S", "300"))
 ORPHAN_KILL_MAX_S = float(os.environ.get("TEAM_ORPHAN_KILL_MAX_S", "3600"))
@@ -91,8 +145,34 @@ TIER_HARD = {
     "intel": 45 * 60,
 }
 
-AGENTS = ("recon", "exploit", "verifier")
+AGENTS = ("lead", "recon", "exploit", "verifier")
+# 每个角色的工具集：lead 只做管理（派活/读黑板/汇总），不给 edit，避免它自己改产物。
+TOOLS_BY_AGENT = {
+    "lead": "read,write,bash",
+    "recon": "read,bash,write,edit",
+    "exploit": "read,bash,write,edit",
+    "verifier": "read,bash,write,edit",
+}
+def _lead_prompt() -> str:
+    """队长的系统提示以 agents/lead.md 为唯一来源；读不到时用兜底文本。"""
+    try:
+        p = Path(__file__).resolve().parent.parent / "agents" / "lead.md"
+        t = p.read_text(encoding="utf-8")
+        if t.startswith("---"):
+            t = t.split("---", 2)[2]
+        t = t.strip()
+        if t:
+            return t
+    except Exception:  # noqa: BLE001
+        pass
+    return (
+        "You are the LEAD for one T-Sec box: manage, never attack. Read the box files, "
+        "dispatch 2-3 workers with distinct mechanisms via team_pool.py dispatch, poll, "
+        "aggregate into lead-plan.md, and report only on flag candidate / abandon request / budget out."
+    )
+
 ROLE = {
+    "lead": _lead_prompt(),
     "recon": (
         "You are the recon worker for one T-Sec box. Stay shallow: identify "
         "service/version/entry, run the triage steps, write <box>/triage.txt. "
@@ -675,7 +755,7 @@ def _maybe_auto_recon(j: dict) -> None:
         d = load_jobs()
         running = [x for x in d.get("jobs", {}).values()
                    if x.get("status") in ("running", "queued")]
-        if len(running) >= MAX_TOTAL:
+        if len(running) >= max_total():
             return  # retry after a slot frees; do not burn the marker
         if len([x for x in running if x.get("code") == code]) >= MAX_PER_BOX:
             return
@@ -741,7 +821,7 @@ def _run(job_id: str) -> int:
     if WORKER_GUARD.exists():
         cmd += ["-e", str(WORKER_GUARD)]
     cmd += [
-        "--tools", "read,bash,write,edit",
+        "--tools", TOOLS_BY_AGENT.get(agent, "read,bash,write,edit"),
         "--thinking", os.environ.get("TEAM_THINKING", "high"),
         "--skill", str(SKILLS),
         "--append-system-prompt", str(prompt),
@@ -755,6 +835,7 @@ def _run(job_id: str) -> int:
         ):
             env.pop(k, None)
     env["TEAM_WORKER"] = "1"
+    env["TEAM_WORKER_ROLE"] = agent
     env["TEAM_WORKER_JOB"] = job_id
     env["TEAM_BOX_DIR"] = str(tdir)
     timeout = float(j.get("timeout") or DEFAULT_JOB_TIMEOUT)
@@ -807,7 +888,12 @@ def _run(job_id: str) -> int:
 
 def dispatch(code: str, agent: str, task: str, timeout: float = 0) -> int:
     code = _valid_code(code)
-    if os.environ.get("TEAM_WORKER") == "1" and os.environ.get("TEAM_ALLOW_WORKER_DISPATCH") != "1":
+    # worker 默认不能派生 worker（防止扇出失控）。例外：
+    #   TEAM_WORKER_ROLE=lead  —— 队长就是干这个的（默认模式）
+    #   TEAM_ALLOW_WORKER_DISPATCH=1 —— 显式放开（调试/特殊场景）
+    if (os.environ.get("TEAM_WORKER") == "1"
+            and os.environ.get("TEAM_WORKER_ROLE") != "lead"
+            and os.environ.get("TEAM_ALLOW_WORKER_DISPATCH") != "1"):
         print("[team] workers may not dispatch more workers", file=sys.stderr)
         return 0
     if agent not in AGENTS:
@@ -825,8 +911,8 @@ def dispatch(code: str, agent: str, task: str, timeout: float = 0) -> int:
                 j for j in d["jobs"].values()
                 if j.get("status") in ("running", "queued")
             ]
-            if len(all_running) >= MAX_TOTAL:
-                print(f"[team] total workers {len(all_running)} >= cap {MAX_TOTAL}; not dispatching")
+            if len(all_running) >= max_total():
+                print(f"[team] total workers {len(all_running)} >= cap {max_total()}; not dispatching")
                 return 0
             running = [
                 j
@@ -854,10 +940,16 @@ def dispatch(code: str, agent: str, task: str, timeout: float = 0) -> int:
         }
         save_jobs(d)
     try:
+        # _run 是"监管进程"，它自己要能跑；当派活者本身是 worker（lead）时，
+        # 不能把 TEAM_WORKER=1 传下去，否则 _run 第一行就拒绝执行。
+        sup_env = os.environ.copy()
+        sup_env.pop("TEAM_WORKER", None)
+        sup_env.pop("TEAM_WORKER_ROLE", None)
         sup = subprocess.Popen(
             [PY, str(Path(__file__).resolve()), "_run", jid],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=sup_env,
             start_new_session=True,
             creationflags=NO_WINDOW,
         )
@@ -1804,7 +1896,26 @@ def adopt(code: str, addr: str) -> int:
     if not str(addr).strip():
         print(f"[team] {code}: no container_addr; not dispatching")
         return 1
-    for agent in AGENTS:
+    mode = str(os.environ.get("TBENCH_AUTO_TEAM", "lead")).strip().lower()
+    if mode in ("0", "none", "off", "false", "no"):
+        print(f"[team] {code}: auto-team disabled (TBENCH_AUTO_TEAM={mode})")
+        return 0
+    if mode == "lead":
+        # 默认模式：每箱一个队长（纯管理、不做题），由队长自己派 2-3 个执行者。
+        task = chr(10).join([
+            f"Box {code} at {addr}. You are this box's LEAD: manage, never attack.",
+            f"1) read {tdir}/triage.txt, {tdir}/notes.md, {tdir}/addr.txt first;",
+            "2) dispatch 2-3 workers with DISTINCT mechanisms, e.g.",
+            f"   python bin/team_pool.py dispatch {code} recon '<surface to map>'",
+            f"   python bin/team_pool.py dispatch {code} exploit '<hypothesis A>'",
+            f"   python bin/team_pool.py dispatch {code} verifier '<what re-derive>'",
+            "3) poll: python bin/team_pool.py poll ; aggregate into " + str(tdir / "lead-plan.md"),
+            "4) report to the main ONLY on: (a) flag candidate, (b) request abandon/close with 3-line evidence, (c) budget out. Never stream progress.",
+            f"Budget: at most {MAX_PER_BOX - 1} concurrent workers; 15 min without a new primitive -> stop and report.",
+        ])
+        dispatch(code, "lead", task)
+        return 0
+    for agent in ("recon", "exploit", "verifier"):
         task = (
             f"Box {code} at {addr}. Read {tdir}/triage.txt if present. "
             f"Work only on this box; write under {tdir}/. "
@@ -2062,6 +2173,8 @@ def doctor() -> int:
     token = bool(os.environ.get("BENCHMARK_TOKEN") or os.environ.get("TSEC_TOKEN"))
     print(f"platform env: base={base} token={token}"
           + ("" if base and token else "  -> close/start/enforcer auto-close are INERT"))
+    _boxes, _src = platform_capacity()
+    print(f"capacity: boxes={_boxes} ({_src}) per_box={MAX_PER_BOX} total={max_total()}")
     # The marker is written at session_start; a child pi inherits PI_SESSION_ID,
     # so this is only advisory. The authoritative signal is the tool-result
     # footer: it must contain "ext 2026-11-20.3".
@@ -2133,8 +2246,8 @@ def doctor() -> int:
         d = load_jobs()
         jobs = list(d.get("jobs", {}).values())
         running = [j for j in jobs if j.get("status") in ("running", "queued")]
-        if len(running) > MAX_TOTAL:
-            print(f"  - total workers {len(running)} > {MAX_TOTAL}")
+        if len(running) > max_total():
+            print(f"  - total workers {len(running)} > {max_total()}")
         per = {}
         for j in running:
             per[j.get("code")] = per.get(j.get("code"), 0) + 1
@@ -2216,6 +2329,7 @@ def main() -> int:
     s.add_argument("code")
     cl = sub.add_parser("close")
     cl.add_argument("code")
+    sub.add_parser("capacity")
     sub.add_parser("clock")
     sub.add_parser("doctor")
     h = sub.add_parser("hold"); h.add_argument("code"); h.add_argument("reason", nargs="?", default="")
@@ -2249,6 +2363,14 @@ def main() -> int:
         return api_start(x.code)
     if x.cmd == "close":
         return api_close(x.code)
+    if x.cmd == "capacity":
+        boxes, src = platform_capacity()
+        print(json.dumps({
+            "boxes": boxes, "source": src,
+            "per_box": MAX_PER_BOX, "total": max_total(),
+            "per_box_env": "TEAM_MAX_PER_BOX", "total_env": "TEAM_MAX_TOTAL",
+        }, ensure_ascii=False))
+        return 0
     if x.cmd == "clock":
         print(clock())
         return 0

@@ -1,6 +1,6 @@
 ---
 name: team
-description: "多 Agent 作战规则（v12.5/49545 复盘）：一箱一队、不跨箱；默认 3 worker/箱、最多 9；team_dispatch/team_poll/team_cancel；主控独占平台工具；triage 30min/120s 提前退出；按 is_completed/flag_total 收 flag；close 失败重试。Load before dispatching or reviewing any subagent run."
+description: "多 Agent 作战规则（v12.5/49545 复盘）：一箱一队、不跨箱；默认 1 队长 + 2-3 worker/箱（上限 4/箱、总 12）；lead 只管理不做题；team_dispatch/team_poll/team_cancel；主控独占平台工具；triage 30min/120s 提前退出；按 is_completed/flag_total 收 flag；close 失败重试。Load before dispatching or reviewing any subagent run."
 ---
 
 # team — 多 Agent 规则（以本卡为准）
@@ -16,22 +16,34 @@ description: "多 Agent 作战规则（v12.5/49545 复盘）：一箱一队、�
 
 | agent | tools | 职责 |
 |---|---|---|
+| `lead` | read, write, bash（仅 team_pool 管理命令） | **只管理不做题**：读黑板/派活/poll/汇总 `lead-plan.md`，只在 ① flag 候选 ② 申请放弃 ③ 预算用完 时上报 |
 | `recon` | read, bash, write | 指纹/端点/版本/JS/凭据，写 facts |
 | `exploit` | read, bash, write | 按假设打；写 tried/candidate |
 | `verifier` | read, bash | 第二路径复核 flag；不改状态 |
 
 - **只有主控**有 `list/start/close/submit/touch/run_status/finish`；
 - worker 只 `bash/read/write`，**删 `BENCHMARK_TOKEN`**，不能 start/close/submit；
+- **lead 的硬边界**：`worker-guard` 在子进程里拦掉除 `team_pool.py dispatch|poll|cancel|list|status|doctor`
+  和纯本地只读命令之外的一切（curl/nmap/ffuf/sqlmap/python requests/nc/ssh 一律 block）；
+  它没有 `edit` 工具，不能自己改产物；
 - worker 结果只写黑板/返回摘要，flag 由主控复核后提交。
 
 ## 2. 一箱一队、不跨箱
 
+**队长个数 = 平台能开的容器数（自由，不写死 3）**：
+
 ```
-3 个容器 = 最多 3 队同时存在
-默认:        3 worker/箱（recon + exploit + verifier）
-triage:      1 worker/箱（一箱一个，避免重复指纹）
-429/CPU 高:  降到 1–2
-总 worker 上限 9；9 是默认配置，不是临时模式
+先算容量:  python bin/team_pool.py capacity
+           -> {boxes, per_box, total, source}
+           有平台: env TSEC_MAX_ACTIVE > 409 学到的 work/capacity.json > 3
+           单目标: boxes=1（用户只给一个题目+端口）
+主控:      按 boxes 开满容器，每个箱一个队长（lead）
+triage:    1 worker/箱（此阶段不派队长）
+每箱:      1 lead + 2-3 worker（队长不算做题人手，但占一个 job 槽）
+             easy=1、medium=2、hard=3；多 flag 已拿一面 -> 2 分头 + 1 复核
+429/CPU 高: 降到 1 lead + 1-2，或减 boxes
+上限:      TEAM_MAX_PER_BOX=4；总数 = boxes × per_box（TEAM_MAX_TOTAL 可硬覆盖）
+开关:      TBENCH_AUTO_TEAM=lead（默认）/ all（旧模式）/ 0（不自动派）
 ```
 
 - worker 只服务当前箱，不跨箱；

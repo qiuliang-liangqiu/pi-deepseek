@@ -102,10 +102,10 @@ export default function teamPool(pi: ExtensionAPI) {
   pi.registerTool({
     name: "team_dispatch",
     label: "Team dispatch",
-    description: "Start one detached recon/exploit/verifier pi child for a box. Returns a job id. Prefer this over the batch subagent tool.",
+    description: "Start one detached lead/recon/exploit/verifier pi child for a box. Returns a job id. Prefer this over the batch subagent tool.",
     parameters: Type.Object({
       code: Type.String({ description: "challenge unique_code" }),
-      agent: Type.String({ description: "recon | exploit | verifier" }),
+      agent: Type.String({ description: "lead | recon | exploit | verifier (lead = box manager, never attacks)" }),
       task: Type.String({ description: "task, incl. box address and files to read" }),
       timeout: Type.Optional(Type.Number({ description: "seconds; 0 = default 1800s (TEAM_JOB_TIMEOUT)" })),
     }),
@@ -238,7 +238,7 @@ export default function teamPool(pi: ExtensionAPI) {
   pi.registerTool({
     name: "team_adopt",
     label: "Team adopt",
-    description: "Register an already-started box. During triage it schedules the 120s close; otherwise it dispatches 3 workers.",
+    description: "Register an already-started box. During triage it schedules the 120s close; otherwise it dispatches one box lead (TBENCH_AUTO_TEAM=lead, default), or 3 workers with =all.",
     parameters: Type.Object({ code: Type.String(), addr: Type.Optional(Type.String()) }),
     async execute(_id, p) {
       const out = await pool(["adopt", p.code, p.addr || ""]);

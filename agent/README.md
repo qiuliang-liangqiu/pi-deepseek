@@ -18,7 +18,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 |---|---|
 | `AGENTS.md` | 用户级总规则（止损闸门、速率、triage、团队、注入防护） |
 | `VERSION` | 版本契约（semver）；`update-check` 拿它和仓库里的同名文件比对 |
-| `agents/*.md` | 子代理定义；`recon/exploit/verifier` 自研，`planner/reviewer/scout/worker` 来自 pi 示例 |
+| `agents/*.md` | 子代理定义；`lead/recon/exploit/verifier` 自研（`lead` = 箱队长，只管理不做题），`planner/reviewer/scout/worker` 来自 pi 示例 |
 | `bin/*.py` `bin/triage.sh` | 团队调度、止损台账、triage 闸门、注入扫描、浅指纹 |
 | `extensions/*` | pi 自动加载（`~/.pi/agent/extensions/*/index.ts`） |
 | `extensions/update-check/` | 启动时异步检查仓库 `agent/VERSION`；`/wb-check`、`/wb-update` |
@@ -38,7 +38,11 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 | `TSEC_WORKDIR` | `./work` | framework 的状态目录 |
 | `LOOP_GUARD` | `warn` | `warn` / `block` / `off` |
 | `READ_GUARD` | `warn` | `warn` / `block` / `off` |
-| `TEAM_JOB_TIMEOUT` | `1800` | `team_pool` 单 job 超时（秒） |
+| `TEAM_JOB_TIMEOUT` | `1800` | `team_pool` 单 job 超时（秒）；建议 ≤ `TEAM_STALL_CLOSE_S`，或用 `team_hold` 保题 |
+| `TEAM_MAX_PER_BOX` | `4` | 每箱 job 上限（1 lead + 3 worker） |
+| `TEAM_MAX_TOTAL` | `0`（自动） | 全局 job 上限；0 = `平台容器数 × TEAM_MAX_PER_BOX` |
+| `TBENCH_AUTO_TEAM` | `lead` | `adopt` 后自动派：`lead`（一箱一队长）/ `all`（recon+exploit+verifier）/ `0` |
+| `TSEC_MAX_ACTIVE` | — | 显式指定平台可同时开的容器数（优先于 409 学到的值） |
 | `PI_UPDATE_CHECK` | `on` | `off` 关闭 workbench 新版本自动提示 |
 | `TBENCH_TRIAGE` | `1` | `team_pool adopt` 时是否自动进入 triage |
 | `TBENCH_TRIAGE_PROBE_S` | `120` | triage 单箱探针秒数 |
@@ -46,6 +50,8 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
 ## 注意
 
+- **开局先算容量**：`python bin/team_pool.py capacity` → `{boxes, per_box, total, source}`。
+  有平台按 `boxes` 开满容器（每箱一个队长）；只给单题+端口时 `boxes=1`。
 - `bin/team_pool.py` 的本地状态在 `~/.pi/agent/teams/`（jobs.json、notes、candidate），不要提交。
 - `extensions/subagent` 是 pi 上游示例的改造版；升级 pi 后如果接口变化，以 pi 的 `examples/extensions/subagent` 为准对照。
 - `triage-guard` 读取 `~/.pi/agent/triage_state.json`，由 `triage_gate.py` 维护。

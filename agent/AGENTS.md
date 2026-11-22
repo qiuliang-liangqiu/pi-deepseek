@@ -135,7 +135,8 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
   2026-11-20 起：jobs.json 读改写带锁、worker 结束写 `result-<job>.md`/`candidate-<job>.txt`、
   默认 timeout 1800s、worker 带 injection guard/AGENTS 且无 `TSEC_TOKEN`；
 - `extensions/team-pool/` 注册 `team_dispatch`/`team_poll`/`team_cancel`/`team_adopt`，
-  并在 `start_challenge`/curl start 后自动 `adopt`：triage 中排 120s 关箱，否则 3 worker/箱；
+  并在 `start_challenge`/curl start 后自动 `adopt`：triage 中排 120s 关箱，否则派 **1 个队长/箱**（默认），
+  队长自己再派 2–3 个执行者；
 - 每个 tool result 末尾追加 `team Nr/Md[/No] | CANDIDATE <code>`（o=orphaned/error/cancelled）；
   超过 900s 无新原语会加 `| STALL <code>`；worker 写了 `NEED_RECON` 会加 `| RECON <code>`；enforcer 在跑时加 `| ENF`；
 - `framework.cli enforce` 是全局 `.started` watchdog（默认 dry-run；`--watch --close --since`）；
@@ -180,18 +181,24 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
 - **完成闸门**：`is_completed`/`flag_total` → 不重开；**不是 2 flags**（2/6、3/6 还有剩余）。
   v9.3 的 `COMPLETED`/`REOPEN BUDGET` 已代码化，v12.3 改为按 flag_total。Saltern 在 2 flags 后重开 3 次，烧 88 分钟 0 分；Aperture 解出后停槽 5h。
 - **v10/v12.4 子代理**：主控唯一持有 `start/close/submit`；worker 只 `bash/read/write`，
-  删 `BENCHMARK_TOKEN`；角色 `recon/exploit/verifier`；**默认 3 worker/箱、3 箱共 9**；
+  删 `BENCHMARK_TOKEN`；角色 `lead/recon/exploit/verifier`；**默认 1 lead + ≤3 worker/箱，上限 4/箱、总 12**；
   triage 1/箱；429/CPU 高降到 1–2；blackboard + `flock`；parallel 是 Promise.all，
   不要 batch 9 等最慢的；用户明确“token 多花点换效率”。
 - **v11/v12.4 默认**：15 分钟无新原语自动关（`TBENCH_STALL_CLOSE_S=900`，`touch` 续命）；
-  `TBENCH_AUTO_TEAM=all`（默认）每次 start 派 recon+exploit+verifier，3/箱、总 9；
+  `TBENCH_AUTO_TEAM=lead`（**默认**）每次 start 只派 1 个队长，队长再派 2–3 个执行者；
+  `=all` 回到旧模式（recon+exploit+verifier 各一）；`=0` 不自动派；
   triage 1/箱；429/CPU 高降到 1–2；`submit_flag` 无 `verified` 只警告，主控复核后
   再带 `verified:true` + `evidence`；30 分钟 triage 提醒会写 `TRIAGE.md`。
-- **v12/v12.4 一箱一队、不跨箱**：默认 **3 worker/箱**（recon+exploit+verifier），
+- **v12/v12.4 一箱一队、不跨箱**：默认 **1 队长 + 2–3 worker/箱**（上限 `TEAM_MAX_PER_BOX=4`，
+  总数 = 平台容器数 × 每箱上限，可 env 调），
   triage 1/箱，429/CPU 高降 1–2；用 `team_dispatch` +
   `team_poll`（不要用 `subagent` 的 parallel `tasks`，它会等最慢的）；箱 done 才
   close/cancel 本箱 job/下一题；第一面 flag 在多 flag 卷不等于完成，`is_completed`/`flag_total`
   才关；`close_challenge(A)` 只 cancel A 的 job，B/C 不受影响；讨论最多 2 轮、200 字、无新事实即停。
+- **开局先算容量再开箱**（2026-11-22）：`python bin/team_pool.py capacity` → `{boxes, per_box, total, source}`。
+  - 有平台：`boxes` = 平台可同时开的容器数（env `TSEC_MAX_ACTIVE` > 409 学到的 `work/capacity.json` > 默认 3）；
+    主控就按 `boxes` 开满、每箱一个队长，不要写死 3。
+  - 单目标（用户只给一个题目+端口，无平台凭据）：`boxes=1`，主控 → 1 队长 → 按题目派 worker。
 - **v12.1 triage 强制**：前 30 分钟 `TBENCH_TRIAGE=1`，`start_challenge` 标记 TRIAGE，
   clock 显示 `TRIAGE auto`，adapter 在 `TBENCH_TRIAGE_PROBE_S=120` 秒自动关；这期间
   auto-recon 关闭，只能 `triage.sh` + A/B/C/D + close；30 分钟后恢复正常做题。
@@ -214,7 +221,7 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
 - **v12.3 代码化（2026-11-18）**：`completed`/`flag_total` 是唯一完成判据；completed 10s 关；
   有 flag 但未完成给 `TEAM_SOLVED_HOLD_S=600`（镜像名 `TBENCH_SOLVED_HOLD_S`）兜底；close 非 404 失败保留 owned/重试；
   adapter 每 30s 轮询平台 `is_completed`；`start` 对已有 flag 的 closed code 默认拒绝（force+证据）；
-  `team_dispatch` 限每箱 3 个 running、总 9 个。
+  `team_dispatch` 限每箱 `TEAM_MAX_PER_BOX=4`、总 `TEAM_MAX_TOTAL=12`；`lead` 只能派活不能做题。
 
 ---
 
