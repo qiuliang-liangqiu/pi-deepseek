@@ -50,6 +50,11 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
 ## 注意
 
+- **默认工具集可以加内置搜索**：`~/.pi/agent/settings.json` 写
+  `"defaultTools": ["+grep", "+ls"]`（`+` 是增量，不动 `read/bash/edit/write`），`/reload` 后生效。
+  比 `bash -c "grep -rn …"` 稳，输出也只有命中行。
+- **`codemode` 已经能用**（`ctf2` 是 `codemode` 暴露，会自动激活）：批量探活/输出过滤的模板在
+  `agent/skills/tsec-bench-run/references/codemode-probe.md`。
 - **开局先算容量**：`python bin/team_pool.py capacity` → `{boxes, per_box, total, source}`。
   有平台按 `boxes` 开满容器（每箱一个队长）；只给单题+端口时 `boxes=1`。
 - `bin/team_pool.py` 的本地状态在 `~/.pi/agent/teams/`（jobs.json、notes、candidate），不要提交。

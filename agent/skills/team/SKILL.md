@@ -17,9 +17,9 @@ description: "多 Agent 作战规则（v12.5/49545 复盘）：一箱一队、�
 | agent | tools | 职责 |
 |---|---|---|
 | `lead` | read, write, bash（仅 team_pool 管理命令） | **只管理不做题**：读黑板/派活/poll/汇总 `lead-plan.md`，只在 ① flag 候选 ② 申请放弃 ③ 预算用完 时上报 |
-| `recon` | read, bash, write | 指纹/端点/版本/JS/凭据，写 facts |
-| `exploit` | read, bash, write | 按假设打；写 tried/candidate |
-| `verifier` | read, bash | 第二路径复核 flag；不改状态 |
+| `recon` | read, bash, write | 指纹/端点/版本/JS/凭据，写 facts（无 edit，不改已有文件） |
+| `exploit` | read, bash, write, edit | 按假设打；写 tried/candidate（唯一保留 edit 的执行角色） |
+| `verifier` | read, bash, write | 第二路径复核 flag；只写自己的 worker 文件，不改已有产物、不改状态 |
 
 - **只有主控**有 `list/start/close/submit/touch/run_status/finish`；
 - worker 只 `bash/read/write`，**删 `BENCHMARK_TOKEN`**，不能 start/close/submit；

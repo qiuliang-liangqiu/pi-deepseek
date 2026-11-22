@@ -122,6 +122,17 @@ description: 做 TSec Benchmark / XBOW 风格 CTF 靶场跑分（tsecbench 平�
 
 ## 提速要点
 
+### codemode 探活（一次脚本 = 一轮工具调用）
+
+`codemode` 本机已启用（`ctf2` 是 `codemode` 暴露，会自动激活它）。
+多个路径/端口的探活不要一个个 `curl`，用模板一次跑完、**只回差异行**：
+`skills/tsec-bench-run/references/codemode-probe.md`
+
+- 默认并发 6、批间 `sleep 0.3`（≈≤20 req/s）；平台/题目给了更严的就按更严的；
+- 沙箱**没有 `setTimeout`**，限速靠分批 + `sleep`；
+- 大产物（nmap XML / ffuf JSON）在 bash 里解析成 JSON 行，沙箱只回候选；
+- 脚本能调 `tools.*`（全权限）→ **只给主控/队长**，worker 子进程 `-ne` 天然没有。
+
 ### 滚动补位（2026-11-15 起：不要用整批栅栏）
 
 `subagent` 的 parallel 模式是 **Promise.all 语义**：一批三路必须等最慢的返回，期间空闲槽位

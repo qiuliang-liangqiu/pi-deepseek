@@ -149,9 +149,10 @@ AGENTS = ("lead", "recon", "exploit", "verifier")
 # 每个角色的工具集：lead 只做管理（派活/读黑板/汇总），不给 edit，避免它自己改产物。
 TOOLS_BY_AGENT = {
     "lead": "read,write,bash",
-    "recon": "read,bash,write,edit",
+    # recon/verifier 写自己的 worker-<job>.md 需要 write，但不该改已有文件 -> 不给 edit
+    "recon": "read,bash,write",
     "exploit": "read,bash,write,edit",
-    "verifier": "read,bash,write,edit",
+    "verifier": "read,bash,write",
 }
 def _lead_prompt() -> str:
     """队长的系统提示以 agents/lead.md 为唯一来源；读不到时用兜底文本。"""
