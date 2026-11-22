@@ -48,18 +48,24 @@ nohup ./bin/wireproxy.exe -c wgproxy.conf -i 127.0.0.1:25446 > wgproxy.log 2>&1 
 **提交/验证**：`verify_answer` 是 oracle（true/false，不写审计）；`submit_answer` 可能 60s 超时但已写库，
 查实例 `questions[].answered_correctly` 确认；拿到服务返回的 flag 后先 verify 再 submit，最后 `stop_instance`。
 
-提交 API（Bearer = `~/.config/ctfy/token`）：
+提交走 `platform_do.py`（唯一被 `platform-guard` 放行的口；裸 POST 会被拦）：
 
 ```bash
-POST https://ctfy.tsinghua.edu.cn/api/v1/submissions
-{"instance_id":"<uuid>","question_id":"flagN","answer":"FLAG{...}"}
-# 返回 correct / solve_rank / challenge_fully_solved
+# 服务题（有 host:port）：按地址唯一匹配本队 ready 实例后自动提交
+python ~/.pi/agent/bin/platform_do.py submit --target <host:port> --question flag1 --answer-file f.txt
+# 只有实例/附件题：只输出计划，用户在自终端跑 platform_approve.py 生成 approval
+python ~/.pi/agent/bin/platform_do.py submit --instance-id <uuid> --question flag1 --answer-file f.txt
+python ~/.pi/agent/bin/platform_do.py submit --instance-id <uuid> --question flag1 --answer-file f.txt --approval approvals/<...>.json
+# 先看计划不提交：加 --dry-run
 ```
+
+平台侧等价语义：`{"instance_id":"<uuid>","question_id":"flagN","answer":"FLAG{...}"}`，
+返回 `correct` / `solve_rank` / `challenge_fully_solved`。
 
 - 竞赛实例若 `/api/v1/instances/<id>` 报 `platform_busy`/`instance_not_found`，改用
   `/api/v1/competitions/<competition_id>/instances/<id>`（200 可能是可用视图）。
 - `POST /api/v1/instances/<id>/renew?competition_id=<cid>&ttl=7200` 可续期；长题先续期再死磕。
-- `/verify-answer` 与 `/submissions` 是两回事：只 verify 不提交 = 没分。
+- `/verify-answer` 与正式提交是两回事：只 verify 不提交 = 没分（verify 不在 guard 名单里，可以继续 raw；提交一律走 `platform_do.py`）。
 `solves_count` 是“题是否可解”的硬信号；别人有 solve 而我们模型跑不通时，优先怀疑自己的数据流模型。
 
 ## 3. 菜单式 pwn 服务
@@ -187,8 +193,9 @@ POST https://ctfy.tsinghua.edu.cn/api/v1/submissions
 
 ### 7.5 多段题的提交纪律
 
-* 每段拿到 flag 立刻：`verify-answer` 确认 → `POST /api/v1/submissions` 正式提交 → 记录
-  `answered_correctly`；不要攒到最后（实例可能到期/被回收）。
+* 每段拿到 flag 立刻：`verify-answer` 确认 → `platform_do.py submit --target <host:port> --question flagN --answer-file f`
+  正式提交 → 记录 `answered_correctly`；不要攒到最后（实例可能到期/被回收）。
+* 只有实例、没有端口的题：`--instance-id` 只出计划，需用户在自终端 `platform_approve.py` 生成 approval 再 `--approval`（一次性）。
 * 提交后看 `challenge_fully_solved`；四段全部 `answered_correctly=true` 才算完。
 * 快到期先 `renew`；隧道 `wireproxy` 偶发 SOCKS 假死（TCP 可连但不回 greeting）→
   杀进程换端口重拉，别先怀疑题。

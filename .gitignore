@@ -35,3 +35,9 @@ node_modules/
 # workbench update-check runtime cache (agent dir)
 agent/.update-check.json
 agent/.update-notified.json
+
+# 本地补丁/备份与运行态（不随仓库分发）
+agent/*.bak-*
+agent/run_gate.json
+agent/platform-audit.jsonl
+toolbox/2/

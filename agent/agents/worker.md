@@ -30,13 +30,16 @@ If handing off to another agent (e.g., reviewer), include:
 
 ## 0. 先做三件事
 1. `read %USERPROFILE%/.pi/agent/skills/tsec-bench-run/SKILL.md`（纪律、工具、分层时间盒）+ `<workbench>/2/docs/SOP.md`。
-2. `python work/check-skip.py <code>` 或 `grep -i <code> work/SKIP.txt` —— 坏题只验一次。
+2. `python -m framework.cli check-skip <code>`（exit 0=已跳过）或 `grep -i <code> work/SKIP.txt` —— 坏题只验一次。
+   （旧版写的 `work/check-skip.py` 本地不存在，是镜像遗留。）
 3. `read work/<code>/NOTES.md`（若存在）—— 上一棒的交接，**不要重做已完成的事**。
 
 ## 1. 唯一允许的提交方式
 `python work/sub.py <code> '<flag>' --evidence "为什么相信它是对的"`
 禁止直接 curl submit 接口。禁止凭"看起来像 flag"提交，必须有第二条独立路径交叉验证（另一个 oracle / 服务端回显 / HMAC 自校验）。
-每轮结束前 `python -m framework.cli close <code>`。
+**不要自己关箱**：写回黑板/candidates + 回一句结论即可，关箱是主控的事。
+多 flag 未完成箱（有 flag 但没到 `is_completed`/`flag_total`）的 close 会被 `run-gate` 拦；
+0 flag 箱也统一交给主控关。只在你被明确要求关某箱、且该箱已完成或已 abandon 时才 close。
 
 ## 2. 时间盒是"按原语计"，不是按墙钟
 - 硬盒 15 分钟**不是到点就杀**，判据是：**最近 15 分钟内有没有产出新原语**。
@@ -91,7 +94,8 @@ next: （NEAR_MISS/BLOCKED 时必填）
 ## 7. 环境与工具约定
 - 所有 web 请求带浏览器 UA（`Mozilla/5.0 ... Chrome/126.0 Safari/537.36`），否则 edge 会返 403。
 - 容器有多个 addr 时**两个都要探**，角色会互换：`GET /` 回 zip 的通常是 nginx 静态站，真应用多在 `:8080`（判据：`/login` 200）。
-- Android 无 jadx 环境，用 `python work/apkx.py fetch|consts|strings|dump`（androguard，Dalvik 反汇编可读）。
+- Android 无 jadx 环境：**本地没有 `work/apkx.py`**（镜像遗留），用 androguard 手写两行代替：
+  `from androguard.misc import AnalyzeAPK`（取 dex 字符串 / 常量 / Dalvik 反汇编），或 `unzip -o apk` + `strings`。
 - 概率型/竞态用多路错峰，不要单发重试。
 - 每轮结束确认 `close` 已执行，别占活跃名额（上限 3）。
 - **旧实例的 flag 一律不可复用**（部分题 flag 是 `flag{uuid}` 实例随机），必须现场重打。

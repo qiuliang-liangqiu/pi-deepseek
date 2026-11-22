@@ -9,9 +9,9 @@ Policy (local pi; the tbench image needs the same code):
     it in a TTY.
   * Closing a box that already has flags but is not completed is blocked unless
     it is an explicit abandonment with stall evidence (notes updated within the
-    14-minute window), a recorded environment failure, or a TTY approval.
+    15-minute window), a recorded environment failure, or a TTY approval.
   * A 0-flag box may still be closed by the normal stall gate / tier rule.
-  * Exemptions are deliberately narrow: 14-minute stall gate, environment
+  * Exemptions are deliberately narrow: 15-minute stall gate, environment
     failure, triage's 120 s probe, and instance-only submission approval.
 
 The gate is inert when no platform env and no open box exist. `RUN_GATE=off`

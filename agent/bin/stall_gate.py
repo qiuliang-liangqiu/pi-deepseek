@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """stall_gate.py —— 止损闸门（AGENTS.md「止损闸门与速率纪律」的可执行落点）
 
-用途：给「14 分钟无新原语」这条硬规则一个机械判据，避免靠自觉。
+用途：给「15 分钟无新原语」这条硬规则一个机械判据，避免靠自觉。
 
 用法（每个目标一个 notes.md，放在本轮报告同目录）：
 
   python stall_gate.py open  <dir> <target>       # 开箱：建 notes.md，记录 T0
   python stall_gate.py beat  <dir> "新事实..."     # 有新原语
   python stall_gate.py beat  <dir> -               # 无新原语（刷新动作时间，但不算进展）
-  python stall_gate.py check <dir> [--minutes 14] # 闸门判定
+  python stall_gate.py check <dir> [--minutes 15] # 闸门判定
   python stall_gate.py show  <dir>
 
 check 退出码：
@@ -42,6 +42,8 @@ NOTES = "notes.md"
 T0_RE = re.compile(r"^T0\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})")
 LINE_RE = re.compile(r"^-\s+(\d{2}:\d{2})\s+\[([P\-])\]\s*(.*)$")
 TIME_RE = re.compile(r"^-\s+(\d{2}:\d{2})\s+")
+# 宽松匹配：任何以（可选的 "-" 再加）HH:MM 开头的行。只用来数"没写标记的行"。
+LOOSE_TIME_RE = re.compile(r"^\s*-?\s*(\d{2}:\d{2})\s+\S")
 
 
 def _path(d):
@@ -155,6 +157,17 @@ def cmd_check(d, minutes):
         return 2
     t0, last_p, last_action, n, fallback = _parse_entries(p)
     mtime = _stamp(p)
+    # 提示：形如 "20:31 发现 ..." / "- 20:31 发现 ..." 但没有 [P]/[-] 的行不计入台账。
+    # 这是 2026-11-22 之前 AGENTS.md §6 的写法，照它写的 notes 会让闸门退化，所以显式提醒。
+    try:
+        _txt = open(p, encoding="utf-8", errors="replace").read()
+    except OSError:
+        _txt = ""
+    _loose = sum(1 for line in _txt.splitlines()
+                 if LOOSE_TIME_RE.match(line) and not LINE_RE.match(line.strip()))
+    if _loose:
+        print(f"  [!] 有 {_loose} 行是 HH:MM 但没有 [P]/[-] 标记，**不计入台账**；"
+              "请改用: python stall_gate.py beat <dir> \"<内容>\"（无进展写 - 即可）")
     if last_p is not None:
         ref, src = last_p, "最后一次新原语"
     elif t0 is not None:
@@ -194,7 +207,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("open"); a.add_argument("dir"); a.add_argument("target")
     b = sub.add_parser("beat"); b.add_argument("dir"); b.add_argument("text")
-    c = sub.add_parser("check"); c.add_argument("dir"); c.add_argument("--minutes", type=int, default=14)
+    c = sub.add_parser("check"); c.add_argument("dir"); c.add_argument("--minutes", type=int, default=15)
     d = sub.add_parser("show"); d.add_argument("dir")
     ns = ap.parse_args()
     if ns.cmd == "open":

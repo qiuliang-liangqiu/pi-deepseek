@@ -33,6 +33,8 @@ const SUBMISSION_PATHS = [
 	"/api/v1/qa/submissions",
 	"/submissions",
 	"/qa/submissions",
+	"/awd/flags",
+	"/api/v1/challenges/attempt",
 ];
 
 const MCP_SUBMIT_RE = /^mcp__(?:ctf2|ctfy)__.*submit/i;
@@ -187,7 +189,7 @@ export function analyzeBashCommand(command: string, cwd: string): Hit | null {
 	if (hasPlatformHost(command) && hasSubmissionIntent(command) && hasWriteIntent(command)) {
 		return {
 			kind: "raw-platform-submit",
-			reason: "命令直接对平台 flag 提交接口发请求（/submissions 或 /qa/submissions）",
+			reason: "命令直接对平台 flag 提交接口发请求（/submissions、/qa/submissions、/awd/flags、CTFd /api/v1/challenges/attempt）",
 		};
 	}
 

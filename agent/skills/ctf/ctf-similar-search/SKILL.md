@@ -21,6 +21,10 @@ metadata:
 
 Search for similar CTF challenge writeups using Tavily API.
 
+> **本机政策（2026-11-22 用户确认）**：允许按题名/比赛名检索 writeup 与公开题解。
+> 只蒸馏方法，不抄字面 flag（实例常随机化）；平台单独禁某题时平台优先。
+> 找到后怎么吸收：见 `skills/ctf-state-search` 的「writeup 吸收」四步。
+
 ## Prerequisites
 
 ```bash

@@ -5,6 +5,14 @@ description: 做 TSec Benchmark / XBOW 风格 CTF 靶场跑分（tsecbench 平�
 
 # TSec 跑分
 
+> **本地可用性核对（2026-11-22）**：本机 `<workbench>` = `$PI_WORKBENCH`，目录布局是
+> `docs/ framework/ work/`，**没有 `2/` 层**（已建 `2/{docs,framework,work}` junction 兼容两种写法）。
+> 下列被本文引用的辅助件**本地不存在**，遇到直接降级，不要反复找：
+> `work/check-skip.py`（→ `python -m framework.cli check-skip`）、`work/calibrate.py`、
+> `work/flag_randomized.py`、`work/apkx.py`、`work/probe13.py`、
+> `framework/tools/{a14p5,a16f2,fcgi}.py`（只有 `t.py`/`oracle.py`）；
+> `work/ATTEMPTS.md` 实际叫 `work/attempts.json`；`docs/CASELIB/` 未生成。
+
 工具与流程都在 `<workbench>/2`（若换机器/换目录，先确认路径存在）：
 
 - 流程与判据：`<workbench>/2/docs/SOP.md`
@@ -13,12 +21,13 @@ description: 做 TSec Benchmark / XBOW 风格 CTF 靶场跑分（tsecbench 平�
 - 作战条令（四步推演 / 双工分工 / 自愈三模式 / 训练与奖励规范）：`skills/tsec-bench-run/DOCTRINE.md`
 - 可直接派发的双工 prompt：`skills/tsec-bench-run/prompts/`（`RECON_SUBAGENT.md`、`EXPLOIT_SUBAGENT.md`、`BLACKBOARD.template.md`，ACTION 协议已映射到真实命令）
 - 每题派几个人：`skills/tsec-bench-run/prompts/DISPATCH.md`（单人 vs 双工决策表 + 升级/降级触发 + 主控 runbook）
-- **同平台指纹→打法总表（先查这个，再动手）**：`<workbench>/2/docs/CASELIB/runs/2026-11-14-tsecbench63.md`
-  —— 63 题实测：57 通关，逐题给“指纹 + 一句话打法” + 产品/CVE 对照 + 已确认的坏题名单。
+- **同平台指纹→打法（先查这个，再动手）**：`<workbench>/2/docs/PLAYBOOK.md` + `docs/PITFALLS.md`
+  —— 那轮 63 题的结论已合进 `PITFALLS.md`；逐题总表原本在 `docs/CASELIB/runs/2026-11-14-tsecbench63.md`，
+  **本机未生成**（CASELIB 靠本轮 `cli close` 逐题沉淀，见文末），不要去找这个文件。
 - 工具箱：`<workbench>/2/framework/`（`python -m framework.cli status|next|scan|auto|run|submit|close|panic`；
   纪律命令：`preflight|skip|unskip|check-skip|skips|touch|hold|unhold|watch`）；
-  单发小工具在 `<workbench>/2/framework/tools/`（`t.py` 平台 helper、`oracle.py` 文件存在性 oracle、
-  `a14p5.py` 字段名爆破、`a16f2.py` 双段路由 fuzz、`fcgi.py` PHP-FPM RCE）
+  单发小工具在 `<workbench>/2/framework/tools/`（`t.py` 平台 helper、`oracle.py` 文件存在性 oracle 本地有；
+  `a14p5.py`/`a16f2.py`/`fcgi.py` **本地缺**，用 python 等价实现）
 - CTFY / `.internal` / WireGuard / `ctfy-callback` 题型：见 `skills/ctfy-engagement-pwn/SKILL.md`（wireproxy、平台 503/僵尸实例、checker+font pipeline 链式反推）
 
 ## 硬规则（每次都要执行）
@@ -162,7 +171,7 @@ python work/slots.py status | inspect <code> --kill
   7 题靠源码 4-10 分钟解决；黑盒摸索型 hard 全部超时。
 - 所有请求**带浏览器 UA**（默认 curl/requests UA 会被 edge 返 `403 client blocked`，易误判“无源码”）。
 - start 后 15 秒内跑统一探活（两个地址都探、顺序会互换、IP 池会复用）：`run`/`auto` 已内置
-  `framework/governance.py` 的双地址 TCP 探活，选可达的那个；旧模板 `work/probe13.py` 保留。
+  `framework/governance.py` 的双地址 TCP 探活，选可达的那个。（旧模板 `work/probe13.py` 本地已不存在，不要去找。）
 - 每轮结束把"指纹 → payload"回流进下一轮 subagent 的 prompt，命中率提升明显。
 - 概率型漏洞（竞态/TOCTOU）用 `framework/race.py` 的多路错峰，不要单发重试。
 - **容器内网拓扑每轮都变**（角色/IP 会互换）：start 后固定 `getent hosts` + 用容器内
