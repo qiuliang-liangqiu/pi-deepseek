@@ -37,5 +37,4 @@
 安全：`check` 只读一个版本字符串（`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$`），
 不会执行远端内容；`apply` 运行的 `scripts/update.py` 来自本仓库，且必须经过确认框。
 
-本机存在 `.update-hold` 时（配置源头机器）：不提示跟随仓库，`/wb-update` 拒绝覆盖；
-发布本地改动改用仓库的 `scripts/publish.py`。
+本机存在 `.update-hold` 时（配置源头机器）：不提示跟随仓库，`/wb-update` 拒绝覆盖。

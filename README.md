@@ -89,18 +89,6 @@ bash scripts/update.sh --keep-local    # 你自己改过的文件保留你的版
 pi 里还有 `/wb-check`（强制查新版本）、`/wb-update`（先打印计划再更新）；
 版本契约是仓库的 `agent/VERSION`（当前 1.1.0），不会自动升级。
 
-**本地是源头时**（你在本机持续改 agent 配置）：在 `~/.pi/agent/.update-hold` 写一行理由，
-`update-check` 就不再提示跟随仓库，`/wb-update` 也会拒绝覆盖本机。
-发布本地改动到 GitHub、让别的机器能检测到，用：
-
-```bash
-python scripts/publish.py --dry-run    # 看会改仓库哪些文件
-python scripts/publish.py --yes        # 复制 → 脱敏 → 清单 → bump VERSION → commit → push
-```
-
-发布前置门：仓库 `agent/` 干净、扩展先过 `bin/check_extensions.mjs` 解析、
-复制后跑 `scripts/redact.py` 与 `scripts/check_no_secrets.py`。
-
 ---
 
 ## 它的优势
