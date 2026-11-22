@@ -9,10 +9,16 @@ Targets discovered automatically
 * **current Debian-family host** (apt)      — when already running on Linux
 
     python scripts/setup-tools.py                      # menu, then a mapping table
-    python scripts/setup-tools.py --list               # mappings only
+    python scripts/setup-tools.py --list               # 只检查（映射表，不安装）
+    python scripts/setup-tools.py --json-targets       # 机器可读的目标列表（扩展用）
     python scripts/setup-tools.py --target vm --ssh-user <you> --only jq --dry-run
     python scripts/setup-tools.py --target wsl:Ubuntu --yes
+    python scripts/setup-tools.py --target ssh:target-host --yes
     python scripts/setup-tools.py --target windows --group web,recon --yes
+
+Where the agent itself runs decides the default: on Windows you get the menu
+(Windows 本机 / WSL / SSH / Kali); on Ubuntu/Kali/macOS it checks and installs
+for the current host (`apt` / `brew`), no menu.
 
 Safety
 ------
@@ -21,6 +27,10 @@ Safety
   channel that will install them); unavailable tools are marked, not skipped.
 * `sudo` on Linux needs `--allow-sudo`; over SSH it is passed to `ssh -t` so the
   remote sudo prompt works.
+* Go fallbacks install into `~/.local/bin`; if proxy.golang.org / sum.golang.org
+  is unreachable (common on CN networks) they retry once via `goproxy.cn`.
+* Kali-only packages (metasploit / netexec / responder / rizin ...) are reported
+  as unavailable on plain Ubuntu instead of silently failing.
 * stdlib only; no `curl | sh`, no downloads outside the package managers.
 """
 from __future__ import annotations
@@ -59,6 +69,7 @@ class Tool:
     gem: str = ""
     probe: str = ""
     note: str = ""
+    alt: list[str] = field(default_factory=list)   # 等效替代（Kali 专属包在 Ubuntu 上用它）
 
 
 CATALOG: list[Tool] = [
@@ -77,7 +88,8 @@ CATALOG: list[Tool] = [
     Tool("mitmproxy", "web", "抓包改包", ubuntu=["mitmproxy"], kali=["mitmproxy"], pip="mitmproxy", probe="mitmdump"),
     Tool("gdb", "pwn", "动态调试", ubuntu=["gdb"], kali=["gdb"], probe="gdb"),
     Tool("radare2", "pwn", "反汇编", ubuntu=["radare2"], kali=["radare2"], probe="r2"),
-    Tool("rizin", "pwn", "r2 现代分支", ubuntu=["rizin"], kali=["rizin"], probe="rizin"),
+    Tool("rizin", "pwn", "r2 现代分支", ubuntu=["rizin"], kali=["rizin"], probe="rizin",
+         alt=["radare2"]),
     Tool("upx", "pwn", "解壳", win="UPX.UPX", ubuntu=["upx-ucl"], kali=["upx-ucl"], probe="upx"),
     Tool("patchelf", "pwn", "改 rpath/interp", ubuntu=["patchelf"], kali=["patchelf"], probe="patchelf"),
     Tool("pwntools", "pwn", "exploit 框架 + checksec", pip="pwntools", probe="pwn"),
@@ -142,7 +154,8 @@ CATALOG: list[Tool] = [
     Tool("pngcheck", "forensics", "PNG 结构校验", ubuntu=["pngcheck"], kali=["pngcheck"], probe="pngcheck"),
     Tool("scalpel", "forensics", "文件雕刻", ubuntu=["scalpel"], kali=["scalpel"], probe="scalpel"),
     Tool("testdisk", "forensics", "分区/文件恢复（含 photorec）", ubuntu=["testdisk"], kali=["testdisk"], probe="testdisk"),
-    Tool("bulk-extractor", "forensics", "批量特征提取", ubuntu=["bulk-extractor"], kali=["bulk-extractor"], probe="bulk_extractor"),
+    Tool("bulk-extractor", "forensics", "批量特征提取", ubuntu=["bulk-extractor"], kali=["bulk-extractor"],
+         probe="bulk_extractor", alt=["scalpel", "foremost", "sleuthkit"]),
     Tool("tcpdump", "forensics", "抓包", ubuntu=["tcpdump"], kali=["tcpdump"], probe="tcpdump"),
     Tool("wireshark", "forensics", "GUI 抓包（含 tshark）", win="WiresharkFoundation.Wireshark",
          ubuntu=["wireshark"], kali=["wireshark"], probe="wireshark"),
@@ -151,12 +164,15 @@ CATALOG: list[Tool] = [
     # ---- 内网 / 红队（Kali 自带，Ubuntu 需要 universe） ----
     Tool("hydra", "web", "在线爆破（有结构性证据才用）", ubuntu=["hydra"], kali=["hydra"], probe="hydra"),
     Tool("aircrack-ng", "recon", "无线", ubuntu=["aircrack-ng"], kali=["aircrack-ng"], probe="aircrack-ng"),
-    Tool("metasploit", "ad", "漏洞利用框架", kali=["metasploit-framework"], probe="msfconsole"),
+    Tool("metasploit", "ad", "漏洞利用框架", kali=["metasploit-framework"], probe="msfconsole",
+         alt=["impacket", "nuclei"]),
     Tool("impacket", "ad", "AD/SMB 脚本集", ubuntu=["python3-impacket"], kali=["impacket-scripts"],
          pip="impacket", probe="impacket-secretsdump"),
-    Tool("netexec", "ad", "SMB/WinRM/LDAP 一把梭（nxc）", kali=["netexec"], probe="nxc"),
-    Tool("responder", "ad", "LLMNR/NBT-NS 投毒", kali=["responder"], probe="responder"),
-    Tool("bettercap", "ad", "中间人/ARP", kali=["bettercap"], probe="bettercap"),
+    Tool("netexec", "ad", "SMB/WinRM/LDAP 一把梭（nxc）", kali=["netexec"], probe="nxc",
+         alt=["impacket"]),
+    Tool("responder", "ad", "LLMNR/NBT-NS 投毒", kali=["responder"], probe="responder",
+         alt=["bettercap"]),
+    Tool("bettercap", "ad", "中间人/ARP", ubuntu=["bettercap"], kali=["bettercap"], probe="bettercap"),
 ]
 BY_ID = {t.id: t for t in CATALOG}
 
@@ -505,8 +521,8 @@ def kali_qemu_ensure(target: Target, args) -> bool:
     return True
 
 
-def wsl_install_kali(args) -> int:
-    cmd = ["wsl.exe", "--install", "-d", "kali-linux"]
+def wsl_install(args, distro: str = "kali-linux") -> int:
+    cmd = ["wsl.exe", "--install", "-d", distro]
     print("    将执行：" + " ".join(cmd) + "（需要一次 UAC，装完通常要重启）")
     if args.dry_run:
         return 0
@@ -517,7 +533,7 @@ def wsl_install_kali(args) -> int:
         except (EOFError, KeyboardInterrupt):
             return 0
     rc, _ = run(cmd, timeout=3600, want_tty=True)
-    print("    完成，重启后重跑本脚本就能看到 Kali 目标" if rc == 0 else f"    ! exit {rc}")
+    print(f"    完成，重启后重跑本脚本就能看到 {distro} 目标" if rc == 0 else f"    ! exit {rc}")
     return 0
 
 
@@ -562,10 +578,13 @@ def docker_ensure(image: str, name: str = DOCKER_NAME, dry: bool = False) -> boo
 def targets() -> list[Target]:
     out: list[Target] = []
     if IS_WIN:
-        has_kali_wsl = any("kali" in d.lower() for d in wsl_dists())
-        if not has_kali_wsl:
+        dists = wsl_dists()
+        if not dists:
+            out.append(Target("wsl-ubuntu", "Ubuntu（WSL，还没装：wsl --install -d Ubuntu）",
+                              "wsl-install", "Ubuntu", distro="Ubuntu", os_name="ubuntu"))
+        if not any("kali" in d.lower() for d in dists):
             out.append(Target("kali-wsl", "Kali（WSL，需安装：wsl --install -d kali-linux）",
-                              "wsl-install", "kali", os_name="kali"))
+                              "wsl-install", "kali-linux", distro="kali-linux", os_name="kali"))
 
     have_script, have_image, running = qemu_state()
     if have_script:
@@ -629,6 +648,10 @@ def targets() -> list[Target]:
             d = "linux"
         out.append(Target("apt", f"{os_title(d)}（本机 apt）", "apt", "host",
                           distro=d, os_name=d))
+    # 菜单顺序：本机/当前系统优先，然后 WSL，然后 SSH，最后才是需要额外下载的
+    order = {"winget": 0, "apt": 0, "brew": 0, "wsl": 1, "wsl-install": 2,
+             "ssh": 3, "docker": 4, "unsupported": 0}
+    out.sort(key=lambda t: (order.get(t.kind, 5), 0 if t.host or t.kind != "ssh" else 1))
     return out
 
 
@@ -763,6 +786,12 @@ def msys2_tool(name: str) -> str:
                 return str(cand)
     return ""
 
+def alt_tools(t: Tool) -> list[Tool]:
+    """Equivalent tools to use when the Kali package is unavailable on this distro."""
+    by_id = {x.id: x for x in CATALOG}
+    return [by_id[a] for a in t.alt if a in by_id and a != t.id]
+
+
 def installed_in(target: Target, t: Tool) -> bool:
     probe = t.probe or t.id
     if target.kind == "winget":
@@ -844,7 +873,8 @@ def make_plan(target: Target, ids: list[str] | None, groups: list[str] | None) -
 def show_plan(rows: list[dict], target: Target) -> None:
     print(f"\n目标：{target.label}")
     if target.kind == "wsl-install":
-        print("  还没安装：选中它会执行 wsl --install -d kali-linux（一次 UAC，装完多半要重启）")
+        distro = target.distro or "Ubuntu"
+        print(f"  还没安装：选中它会执行 wsl --install -d {distro}（一次 UAC，装完多半要重启）")
         return
     if target.kind == "unsupported":
         print("  这个发行版不在支持范围（只覆盖 Debian/Ubuntu/Kali 的 apt）：")
@@ -857,8 +887,16 @@ def show_plan(rows: list[dict], target: Target) -> None:
                    if not r["installed"] and not r["available"] and not r["fallback"]]
     for r in rows:
         t = r["tool"]
-        state = "已装" if r["installed"] else ("可装" if r["available"] else
-                                              (f"兜底 {r['fallback']}" if r["fallback"] else "不可用"))
+        if r["installed"]:
+            state = "已装"
+        elif r["available"]:
+            state = "可装"
+        elif r["fallback"]:
+            state = f"兜底 {r['fallback']}"
+        elif alt_tools(t):
+            state = "不可用（替代 " + ",".join(x.id for x in alt_tools(t)) + "）"
+        else:
+            state = "不可用"
         pkg = ", ".join(r["pkgs"]) if r["pkgs"] else "-"
         note = f"  ← {t.note}" if t.note else ""
         print(f"  {t.id:<12} {t.group:<10} {pkg:<34} {state}{note}")
@@ -1117,7 +1155,18 @@ def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> li
         if r["available"]:
             continue
         if not r["fallback"]:
-            print(f"    ! {t.id}: 无可用安装方式")
+            alts = alt_tools(t)
+            have = [x.id for x in alts if installed_in(target, x)]
+            pending = [x for x in alts if x.id not in have]
+            if have:
+                print(f"    ! {t.id}: 用等效替代 {', '.join(have)}（已装）")
+                continue
+            if pending:
+                print(f"    ! {t.id}: 当前源没有，改装等效替代 {', '.join(x.id for x in pending)}")
+                alt_rows = make_plan(target, [x.id for x in pending], None)
+                failed.extend(install(target, alt_rows, allow_sudo, dry))
+                continue
+            print(f"    ! {t.id}: 无可用安装方式（当前源没有包；仅 Kali 仓库或需手动装）")
             failed.append(t.id)
             continue
         if t.pip:
@@ -1125,25 +1174,37 @@ def install(target: Target, rows: list[dict], allow_sudo: bool, dry: bool) -> li
         elif t.gem:
             cmd = f"gem install --user-install {t.gem}"
         elif t.go:
-            cmd = f"go install {t.go}"
+            # go 的默认二进制目录 ~/go/bin 不在非交互 PATH，统一下到 ~/.local/bin
+            cmd = f"mkdir -p $HOME/.local/bin && GOBIN=$HOME/.local/bin go install {t.go}"
         else:
             failed.append(t.id)
             continue
         print(f"    $ [{target.label}] {cmd}")
         if dry:
             continue
-        rc, _ = exec_in(target, cmd, timeout=1200, tty=(target.kind == "ssh"))
+        rc, out = exec_in(target, cmd, timeout=1200)
+        # 国内网络常连不上 proxy.golang.org / sum.golang.org：换 goproxy.cn 重试一次
+        if rc != 0 and t.go and ("proxy.golang.org" in out or "sum.golang.org" in out):
+            alt = "export GOPROXY=https://goproxy.cn,direct; " + cmd
+            print(f"    $ [{target.label}] {alt}   （默认 Go 代理不通，换 goproxy.cn）")
+            rc, out = exec_in(target, alt, timeout=1200)
         if rc != 0:
             failed.append(t.id)
             print(f"    ! {t.id} fallback failed (exit {rc})")
+            tail = [l for l in out.strip().splitlines() if l.strip()][-2:]
+            for l in tail:
+                print("      " + l[:160])
     return failed
 
 
 # --------------------------------------------------------------------- menu
 def menu(ts: list[Target]) -> Target | None:
+    print(f"\033[1;36m本机环境：{env_summary()}\033[0m")
     print("\033[1;36m选择把工具装到哪：\033[0m")
     for i, t in enumerate(ts, 1):
         print(f"  {i}. {t.label}")
+    ssh_idx = len(ts) + 1
+    print(f"  {ssh_idx}. SSH 到其他机器（输入 user@host，Ubuntu/Kali 都行）")
     print("  0. 跳过")
     if IS_WIN and not any(t.kind == "wsl" for t in ts):
         print("\033[33m  （没装 WSL：管理员 PowerShell 跑 wsl --install -d Ubuntu 后再来）\033[0m")
@@ -1157,9 +1218,50 @@ def menu(ts: list[Target]) -> Target | None:
             return None
         if raw in ("0", ""):
             return None
+        if raw == str(ssh_idx):
+            try:
+                who = input("  user@host（或 ~/.ssh/config 里的别名）: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return None
+            if not who:
+                return None
+            user, host, port = "", who, 22
+            if "@" in who:
+                user, host = who.split("@", 1)
+            tail = host.rsplit(":", 1)
+            if len(tail) == 2 and tail[1].isdigit():
+                host, port = tail[0], int(tail[1])
+            return Target("ssh:" + host, f"SSH: {who}", "ssh", host,
+                          host=host, user=user, port=port)
         if raw.isdigit() and 1 <= int(raw) <= len(ts):
             return ts[int(raw) - 1]
         print("  ?")
+
+
+def env_summary() -> str:
+    """One line describing the machine the agent itself runs on."""
+    parts: list[str] = []
+    if IS_WIN:
+        parts.append("Windows " + platform.release())
+    elif IS_MAC:
+        parts.append("macOS " + platform.mac_ver()[0])
+    else:
+        name = ""
+        try:
+            rel = Path("/etc/os-release").read_text(encoding="utf-8", errors="replace")
+            for line in rel.splitlines():
+                if line.startswith("PRETTY_NAME="):
+                    name = line.split("=", 1)[1].strip().strip('"')
+        except OSError:
+            pass
+        parts.append(name or "Linux")
+        wsl = (os.environ.get("WSL_DISTRO_NAME") or "").strip()
+        if wsl:
+            parts.append("WSL: " + wsl)
+    for pm in ("winget", "apt-get", "brew"):
+        if shutil.which(pm):
+            parts.append(pm)
+    return " · ".join(parts)
 
 
 # --------------------------------------------------------------------- main
@@ -1174,6 +1276,9 @@ def main() -> int:
     ap.add_argument("--group", default="", help="逗号分隔：" + ",".join(GROUPS))
     ap.add_argument("--only", default="", help="只处理这些 id（逗号分隔）")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--check", action="store_true", help="只检查当前目标的完整性（等同 --list）")
+    ap.add_argument("--json-targets", action="store_true",
+                    help="打印检测到的安装目标（JSON；扩展/脚本用，不安装）")
     ap.add_argument("--markdown", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--yes", "-y", action="store_true")
@@ -1196,6 +1301,8 @@ def main() -> int:
     ap.add_argument("--start-vm", action="store_true", help="VM 没开机时用 vmrun start 启动并等 IP")
     ap.add_argument("--install-wsl", action="store_true", help="未装 WSL 时执行 wsl --install -d Ubuntu（需要 UAC）")
     args = ap.parse_args()
+    if args.check:
+        args.list = True
 
     if args.markdown:
         print("| 工具 | 组 | Windows (winget) | Ubuntu/Debian (apt) | Kali (apt) | macOS (brew) | 兜底 |")
@@ -1243,6 +1350,26 @@ def main() -> int:
     if args.ssh_host:                       # ad-hoc remote
         ts.append(Target("ssh:" + args.ssh_host, f"SSH: {args.ssh_host}", "ssh",
                          args.ssh_host, host=args.ssh_host, user=args.ssh_user, port=args.ssh_port))
+    if args.target.startswith("ssh:") and not any(t.key == args.target for t in ts):
+        host = args.target[4:]
+        ts.append(Target(args.target, f"SSH: {host}", "ssh", host,
+                         host=host, user=args.ssh_user, port=args.ssh_port))
+
+    if args.json_targets:
+        rows = []
+        for t in ts:
+            ready, note = True, ""
+            if t.kind == "ssh" and not t.host:
+                ready, note = False, "未开机或没有 IP（用 --ssh-host 指定）"
+            elif t.kind == "wsl-install":
+                ready, note = False, "需要 wsl --install（UAC，装完可能要重启）"
+            elif t.kind == "unsupported":
+                ready, note = False, "只支持 Debian 系；用 WSL/VM/Docker"
+            rows.append({"key": t.key, "label": t.label, "kind": t.kind,
+                         "os_name": t.os_name, "host": t.host, "distro": t.distro,
+                         "ready": ready, "note": note})
+        print(json.dumps(rows, ensure_ascii=False))
+        return 0
 
     if args.list:
         pool = ts
@@ -1253,6 +1380,10 @@ def main() -> int:
             if not pool:
                 print(f"target {args.target!r} not found; have: {[t.key for t in ts]}")
                 return 2
+        elif IS_LINUX or IS_MAC:
+            # 已经在 Ubuntu/Kali/macOS 上：默认只检查当前系统
+            pool = ([t for t in ts if t.kind in ("apt", "brew")] or
+                    [t for t in ts if t.kind == "unsupported"] or ts[:1])
         for t in pool:
             if t.kind == "ssh" and not t.host:
                 print(f"\n目标：{t.label}  （未开机/未发现 IP，跳过检测）")
@@ -1270,8 +1401,14 @@ def main() -> int:
             return 2
         chosen = pool[:1]
     elif args.yes or args.auto:
-        chosen = ([t for t in ts if t.provisioner == "qemu"] or
-                  [t for t in ts if t.kind == "winget"] or ts[:1])
+        preferred = ([t for t in ts if t.kind in ("apt", "brew")] if (IS_LINUX or IS_MAC) else
+                     ([t for t in ts if t.provisioner == "qemu"] or
+                      [t for t in ts if t.kind == "winget"]))
+        chosen = preferred or ts[:1]
+    elif IS_LINUX or IS_MAC:
+        # 已经跑在 Ubuntu/Kali/macOS 上：直接检查/安装当前系统，不弹目标菜单
+        chosen = ([t for t in ts if t.kind in ("apt", "brew")] or
+                  [t for t in ts if t.kind == "unsupported"] or ts[:1])
     else:
         picked = menu(ts)
         chosen = [picked] if picked else []
@@ -1325,7 +1462,7 @@ def main() -> int:
             print(f"    [dry-run] 计划：把工具装进 {target.label}")
             return 0
     if target.kind == "wsl-install":
-        return wsl_install_kali(args)
+        return wsl_install(args, target.distro or "Ubuntu")
 
     if target.kind == "ssh":
         managed = target.provisioner in ("qemu", "qemu-kali")
