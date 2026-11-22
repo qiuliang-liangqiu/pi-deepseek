@@ -106,7 +106,7 @@ python scripts/publish.py --yes        # 复制 → 脱敏 → 清单 → bump V
 ## 它的优势
 
 **1. 纪律是代码，不是提示词**
-「14 分钟无新原语就停」「≤20 req/s」「triage 30 分钟」这类规则沉在 hook 和脚本里：
+「15 分钟无新原语就停」「≤20 req/s」「triage 30 分钟」这类规则沉在 hook 和脚本里：
 `run-gate` 在没拿到 `is_completed` / `flags == flag_total` 前**拦住 finish 和关箱**，
 `loop-guard` / `read-guard` 拦重复命令与裸 `cat`，`triage-guard` 拦 triage 未完成就提交，
 `platform-guard` 把 flag 提交收敛到一条脚本化通道。规则被绕过 = 代码被改，不是"模型忘了"。
