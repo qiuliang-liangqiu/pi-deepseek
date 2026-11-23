@@ -100,7 +100,7 @@ if ($existing -and $mode -eq "update") {
     } else { Warn "no baseline manifest (older install): will back up before overwriting" }
 } elseif ($existing) {
     $installed = @()
-    foreach ($item in @("AGENTS.md", "VERSION", "agents", "bin", "extensions", "prompts", "skills", "knowledge")) {
+    foreach ($item in @("AGENTS.md", "VERSION", "agents", "bin", "extensions", "prompts", "skills", "knowledge", "scripts")) {
         $p = Join-Path $Dest $item
         if (-not (Test-Path $p)) { continue }
         Do-It { New-Item -ItemType Directory -Force -Path $Backup | Out-Null } "mkdir $Backup"
@@ -122,7 +122,7 @@ if ($mode -eq "update" -and $existing) {
     Write-Step 3 "install agent/ -> $Dest"
     if ($existing) { Ok "full reinstall (previous copy kept in $Backup)" }
     Do-It { New-Item -ItemType Directory -Force -Path $Dest | Out-Null } "mkdir $Dest"
-    foreach ($item in @("AGENTS.md", "VERSION", "agents", "bin", "extensions", "prompts", "knowledge", "skills")) {
+    foreach ($item in @("AGENTS.md", "VERSION", "agents", "bin", "extensions", "prompts", "knowledge", "skills", "scripts")) {
         $src = Join-Path (Join-Path $RepoRoot "agent") $item
         if (-not (Test-Path $src)) { continue }
         Do-It { Copy-Item -Path $src -Destination (Join-Path $Dest $item) -Recurse -Force } "copy $item"

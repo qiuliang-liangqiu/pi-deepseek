@@ -78,6 +78,7 @@ go install github.com/ffuf/ffuf/v2@latest
 - [tools-mcp.md](tools-mcp.md) - MCP server integration for web: Playwright MCP (admin-bot DOM XSS reproduction, live DOM/console/network inspection, `browser_network_requests` lists endpoints but only `browser_network_request part="response-body"` returns payloads) and Burp Suite official MCP (27 tools, approval gates that block the agent on a modal dialog, target triple decoupling socket from `Host:` header, `normalizeHttpContent` rewriting CR/LF in the request prelude, map-based HTTP/2 that cannot express duplicate headers, `send_to_intruder` stages only, proxy history truncating items at 5000 chars, Collaborator `payloadId`/`customData` Pro-only); when to use each vs curl and ffuf
 - [python-requests.md](python-requests.md) - Python requests toolkit: session scaffold, Burp-Intruder-like fuzzer (sync + ThreadPoolExecutor + httpx async), payload deploy from pat-reference.md wordlists, header/param spray, cookie/JWT, proxy
 - [pat-reference.md](pat-reference.md) — PayloadsAllTheThings index: bulk payloads for XSS/SQLi/SSRF/SSTI/LFI/Command Injection/Upload (requires PAT clone, see Prerequisites)
+- [payload-index.md](payload-index.md) — **首选**：72 条“小而准、可验证”的最小载荷索引（9 类；每条带 signal / stack / placement / oracle / control）。源文件 `payload-index.jsonl`，用 `bin/payload_index.py` 查询、渲染、校验；先查它，再考虑 PAT 大库。
 
 ## When to Pivot
 
@@ -103,10 +104,22 @@ This searches for reference writeups via Tavily API and can help identify the ri
 3. Enumerate hidden functionality from JS bundles, response headers, routes, and alternate methods.
 4. Classify the likely bug family: injection, authz, parser mismatch, upload, trust proxy, state machine, or client-side execution.
 5. Build the smallest proof first: leak, bypass, or primitive. Save full exploit chaining for later.
+6. Before sending a payload, query the small index: `python ~/.pi/agent/bin/payload_index.py search <signal>`; use `show <id>` for stack/placement/oracle/control. Send the minimal probe, capture the baseline, then the control.
 
-### Bulk payloads (PayloadsAllTheThings — on-demand)
+### Payload lookup: small index first, PAT second
 
-This skill works without PAT at load time (graceful degrade): `pat-reference.md` and inline exemplars are available offline; bulk payloads require a PAT clone. After mapping the trust boundary (First-Pass Workflow), check [pat-reference.md](pat-reference.md) for the PAT directory that matches your bug class, then search bulk payloads:
+Load the trust boundary first, then use the curated index before any bulk list:
+
+```bash
+python ~/.pi/agent/bin/payload_index.py search "login"
+python ~/.pi/agent/bin/payload_index.py show sqli-auth-01
+python ~/.pi/agent/bin/payload_index.py curl sqli-auth-01 --target http://127.0.0.1:8080/login  # print only
+python ~/.pi/agent/bin/payload_index.py validate   # 72 entries; schema + dangerous-pattern scan
+```
+
+`payload-index.md` is generated from `payload-index.jsonl`; do not hand-edit it. Every entry has an
+`oracle` and a negative `control`, so “命中” is defined before the request is sent. If the small index
+has no matching signal, fall back to PAT / `pat-reference.md` for bulk variants:
 
 ```bash
 # PAT payload search (requires PAT clone — see Prerequisites; gracefully skipped if missing)

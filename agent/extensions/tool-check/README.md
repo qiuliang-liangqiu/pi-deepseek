@@ -7,8 +7,8 @@
 
 1. **Agent 本身跑在 Ubuntu / Kali / macOS**
    - 查当前系统的工具完整性。
-   - 齐全：footer 显示 `tools ok`；第一次检测、状态从缺→齐、隔 24h 会弹一条
-     `工具齐全：<环境>（N 项）`，之后只留 footer（`PI_TOOL_CHECK_VERBOSE=1` 每次会话都提示）。
+   - 齐全：footer 显示 `tools ok`，并且每个会话都弹一条
+     `工具检测通过：<环境> · N 项齐全`（`PI_TOOL_CHECK_ASK=off` 时只留 footer）。
    - 缺：警告列出缺什么 → `一键自动安装 / 手动安装（给命令） / 稍后`。
 
 2. **Agent 跑在 Windows**
@@ -16,7 +16,7 @@
      - **WSL**：`wsl -l -v` 里有发行版；**没启动就自动启动**（`wsl -d <distro> -- true`），
        再以 root 进去探针检查工具。
      - **SSH**：`~/.ssh/config` 里能免密（BatchMode）登录的主机，进去探针检查。
-   - 找到且工具齐全：footer 显示 `tools ok · WSL: Ubuntu`；同样只在状态变化/隔 24h 时弹一条确认。
+   - 找到且工具齐全：footer 显示 `tools ok · WSL: Ubuntu`；同样每个会话弹一条检测通过确认。
    - 找到但缺工具：警告 + `一键自动安装 / 手动安装 / 稍后`（装进 WSL / SSH 那台）。
 
 3. **找不到 Linux 环境**
@@ -57,7 +57,6 @@ Linux 目标（WSL/apt）自动安装用 root / 免密 sudo；SSH 目标要求�
 | `PI_TOOL_CHECK=off` | 整个扩展不加载（命令也不可用） |
 | `PI_TOOL_CHECK=debug` | 脚本/探针失败时打印原因 |
 | `PI_TOOL_CHECK_ASK=off` | 不弹对话框/警告，只更新 footer（`tools !N` / `tools ok`；检测到跑分/triage 环境变量时也会自动视为 off，避免打断全自动跑分） |
-| `PI_TOOL_CHECK_VERBOSE=1` | 工具齐全时每个会话都弹一条确认（默认只在状态变化/隔 24h 时弹） |
 | `PI_SETUP_TOOLS=<path>` | 安装脚本路径（默认依次找 `<agent>/scripts/`、`PI_WORKBENCH/../scripts`、cwd 向上 4 级；探测到一次就缓存） |
 
 ## 缺失清单与探针（87 项）

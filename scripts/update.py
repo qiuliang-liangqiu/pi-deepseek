@@ -47,7 +47,7 @@ import time
 from pathlib import Path
 
 MANIFEST = ".workbench.json"
-LAYOUT = ["AGENTS.md", "VERSION", "agents", "bin", "extensions", "prompts", "skills", "worker-extensions", "knowledge"]
+LAYOUT = ["AGENTS.md", "VERSION", "agents", "bin", "extensions", "prompts", "skills", "worker-extensions", "knowledge", "scripts"]
 PROTECTED = {"auth.json", "settings.json", "mcp.json", "models.json", "models-store.json",
              "toolkit.json", "triage_state.json", "sessions", "teams", "backups", ".workbench.json"}
 

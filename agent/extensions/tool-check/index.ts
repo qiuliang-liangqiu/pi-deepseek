@@ -2,12 +2,12 @@
  * tool-check：会话启动时按“工具装在哪个环境”自动检查，缺工具就弹选项。
  *
  * 流程（session_start，只有 TUI 才弹）：
- *   1. Agent 自己跑在 Ubuntu/Kali/macOS → 检查当前系统，齐全不提示，缺了就弹
+ *   1. Agent 自己跑在 Ubuntu/Kali/macOS → 检查当前系统，齐全给一条检测通过提示，缺了就弹
  *      「一键自动安装 / 手动安装（给命令）/ 稍后」。
  *   2. Agent 跑在 Windows → 先找 Linux 环境：
  *        WSL（装了但没启动就先替你启动）→ 进去检查工具；
  *        然后是 ~/.ssh/config 里能免密连上的主机。
- *      齐全不提示；不齐全 → 列出缺什么 + 自动/手动选项。
+ *      齐全给一条检测通过提示；不齐全 → 列出缺什么 + 自动/手动选项。
  *   3. 找不到 Linux 环境 → 弹「未检测到 Linux 环境」，两个选项：
  *        「工具装在 Ubuntu/Kali」→ 给启动步骤，启动后重新检测；
  *        「工具用本机 Windows」→ 检查本机，缺了同样给自动/手动。
@@ -323,21 +323,17 @@ function setStatus(ctx: Ui, value?: string): void {
 	ctx.ui.setStatus(STATUS_KEY, value);
 }
 
-/** 齐全时给一次可见反馈：状态变了 / 隔了 24h / 手动 VERBOSE 才弹，避免每会话刷屏。 */
+/** 齐全时也给一条可见反馈：证明检测真的跑过（每个会话一次，不节流）。 */
 function completeFeedback(ctx: Ui, info: ToolInfo, where = "", covered?: { id: string; by: string }[]): void {
 	const st = readCache();
-	const changed = st.last_state !== "ok";
-	const stale = !st.ok_at || Date.now() - st.ok_at > 24 * 3600 * 1000;
 	setStatus(ctx, where ? `tools ok · ${where}` : "tools ok");
 	writeCache({ ...st, last_state: "ok", ok_at: Date.now() });
-	if (changed || stale || process.env.PI_TOOL_CHECK_VERBOSE === "1") {
-		const ct = coveredText(covered || info.covered);
-		ctx.ui.notify(
-			`工具齐全：${where || describeEnv(info)}（${info.checked ?? "?"} 项）` + (ct ? `
+	const ct = coveredText(covered || info.covered);
+	ctx.ui.notify(
+		`工具检测通过：${where || describeEnv(info)} · ${info.checked ?? "?"} 项齐全` + (ct ? `
   已用替代：${ct}` : ""),
-			"info",
-		);
-	}
+		"info",
+	);
 }
 
 function markMissing(): void {
@@ -715,7 +711,6 @@ export default function (pi: ExtensionAPI) {
 				if (found) {
 					if (!found.missing.length) {
 						completeFeedback(ui, info, found.sel.label, found.covered);
-						ui.ui.notify(`工具齐全：${found.sel.label}${coveredText(found.covered) ? `（已用替代：${coveredText(found.covered)}）` : ""}`, "info");
 						return;
 					}
 					markMissing();
@@ -727,7 +722,6 @@ export default function (pi: ExtensionAPI) {
 			const ids = [...(info.missing || []), ...(info.needs_alt || []).map((n) => n.id)];
 			if (!ids.length) {
 				completeFeedback(ui, info);
-				ui.ui.notify(`工具齐全：${describeEnv(info)}（${info.checked ?? "?"} 项）`, "info");
 				return;
 			}
 			markMissing();
@@ -764,12 +758,10 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (found && !found.missing.length) {
 				completeFeedback(ui, info, found.sel.label, found.covered);
-				ui.ui.notify(`工具齐全：${found.sel.label}${coveredText(found.covered) ? `（已用替代：${coveredText(found.covered)}）` : ""}`, "info");
 				return;
 			}
 			if (!localIds.length) {
 				completeFeedback(ui, info);
-				ui.ui.notify(`工具齐全：${describeEnv(info)}（${info.checked ?? "?"} 项）`, "info");
 				return;
 			}
 

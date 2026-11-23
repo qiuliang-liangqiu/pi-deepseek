@@ -259,12 +259,12 @@ python %USERPROFILE%\.pi\agent\bin\platform_do.py submit ...
 footer 出现 `tools !N` 就是缺工具。流程固定为：
 
 - **Agent 自己跑在 Ubuntu/Kali/macOS** → 查当前系统；齐全时 footer `tools ok`，
-  首次/状态变化/隔 24h 弹一条「工具齐全」，之后只留 footer（`PI_TOOL_CHECK_VERBOSE=1` 每次弹）；
+  每个会话弹一条「工具检测通过：<环境> · N 项齐全」（`PI_TOOL_CHECK_ASK=off` 时只留 footer）；
   缺了弹「一键自动安装 / 手动安装（给命令）/ 稍后」。
 - **Agent 跑在 Windows** → 先找 Linux 环境：
   - WSL：已装但没启动会先 `wsl -d <distro> -- true` 启动，再以 root 进去用 `command -v` 探针查工具；
   - `~/.ssh/config` 里能免密登录的主机；
-  - 齐全时 footer `tools ok · WSL: Ubuntu`，只在状态变化/隔 24h 弹确认；缺了弹同样的自动/手动选项。
+  - 齐全时 footer `tools ok · WSL: Ubuntu`，每个会话都弹一条检测通过确认；缺了弹同样的自动/手动选项。
 - **找不到 Linux 环境** → 弹「未检测到 Linux 环境」：选「装在 Ubuntu/Kali」就给启动步骤，
   启动后重新检测（最多 3 轮）；选「用本机 Windows」就查本机（记住偏好，下次不再问）；
   「稍后」= 6 小时不再弹。

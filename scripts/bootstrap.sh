@@ -114,7 +114,7 @@ if [ "$EXISTING" = 1 ] && [ "$MODE" = update ]; then
   ok "增量模式：不整体搬走，逐文件备份到 backups/<时间戳>-update/"
 elif [ -d "$DEST" ] && [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
   run mkdir -p "$BACKUP"
-  for item in AGENTS.md VERSION agents bin extensions prompts skills knowledge; do
+  for item in AGENTS.md VERSION agents bin extensions prompts skills knowledge scripts; do
     [ -e "$DEST/$item" ] || continue
     run mv "$DEST/$item" "$BACKUP/$item"
     ok "backed up $item"
@@ -156,7 +156,7 @@ else
     c "1;36" "\n[3/6] 全新安装 agent/ -> $DEST"
   fi
   run mkdir -p "$DEST"
-  for item in AGENTS.md VERSION agents bin extensions prompts knowledge skills; do
+  for item in AGENTS.md VERSION agents bin extensions prompts knowledge skills scripts; do
     [ -e "$REPO_ROOT/agent/$item" ] || continue
     run cp -a "$REPO_ROOT/agent/$item" "$DEST/$item"
     ok "$item"
