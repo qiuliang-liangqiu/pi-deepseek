@@ -29,9 +29,16 @@
 
 | 选项 | 行为 |
 |---|---|
-| 一键自动安装 | 后台跑 `scripts/setup-tools.py --target <key> --only <缺失> --yes`，完成后复查并通知；日志 `~/.pi/agent/tools-setup-*.log` |
+| 一键自动安装 | 后台跑 `<agent>/scripts/setup-tools.py --target <key> --only <缺失> --yes`（找不到脚本时该项显示“不可用”），完成后复查并通知；日志 `~/.pi/agent/tools-setup-*.log` |
 | 手动安装 | 只打印命令：先 `--list` 看计划，再 `--allow-sudo` 安装 |
 | 稍后 | 记住 6 小时，不弹对话框 |
+
+> 安装脚本随机下发：仓库 `scripts/setup-tools.py` 发布时同步到 `agent/scripts/`，安装/更新后位于
+> `~/.pi/agent/scripts/setup-tools.py`。没有脚本时（老安装）**仍会弹出选择框**，只是自动安装不可用，
+> 手动项会提示先 `/wb-update`。
+>
+> 弹框只能由「明确选稍后」触发 6 小时退避；**Esc / 60 秒无响应只跳过本次**，不写 snooze。
+> 缺失指纹包含 `missing` + `needs_alt`，任一项变化都会重新提示。
 
 需要 sudo 密码或 SSH 密码时，自动安装会拒绝并转成手动命令（扩展没有 TTY，不会吞密码）。
 Linux 目标（WSL/apt）自动安装用 root / 免密 sudo；SSH 目标要求免密。
@@ -51,7 +58,7 @@ Linux 目标（WSL/apt）自动安装用 root / 免密 sudo；SSH 目标要求�
 | `PI_TOOL_CHECK=debug` | 脚本/探针失败时打印原因 |
 | `PI_TOOL_CHECK_ASK=off` | 不弹对话框/警告，只更新 footer（`tools !N` / `tools ok`；检测到跑分/triage 环境变量时也会自动视为 off，避免打断全自动跑分） |
 | `PI_TOOL_CHECK_VERBOSE=1` | 工具齐全时每个会话都弹一条确认（默认只在状态变化/隔 24h 时弹） |
-| `PI_SETUP_TOOLS=<path>` | 安装脚本路径（默认按 `PI_WORKBENCH`、cwd 自动探测；探测到一次就缓存） |
+| `PI_SETUP_TOOLS=<path>` | 安装脚本路径（默认依次找 `<agent>/scripts/`、`PI_WORKBENCH/../scripts`、cwd 向上 4 级；探测到一次就缓存） |
 
 ## 缺失清单与探针（87 项）
 

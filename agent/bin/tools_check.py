@@ -359,6 +359,12 @@ def setup_script() -> str:
     explicit = (os.environ.get("PI_SETUP_TOOLS") or "").strip()
     if explicit and Path(explicit).is_file():
         return str(Path(explicit).resolve())
+    # 随 agent 一起安装的副本：干净机器没有 repo checkout 也能一键安装
+    me = Path(__file__).resolve()
+    for cand in (me.parent.parent / "scripts" / "setup-tools.py",
+                 me.parent / "setup-tools.py"):
+        if cand.is_file():
+            return str(cand)
     workbench = (os.environ.get("PI_WORKBENCH") or "").strip()
     if workbench:
         script = Path(workbench).resolve().parent / "scripts" / "setup-tools.py"

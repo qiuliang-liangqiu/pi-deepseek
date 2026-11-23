@@ -51,4 +51,4 @@ frontmatter 适配 pi、每个 SKILL.md 顶部加「先看索引 → grep 定位
 | `agent-self-improve` | ARTEX `wrapup.go`/`rsi-lessons.md`/`coverage_ledger.go`/`toolrag.go` + CyberStrikeAI `agentfinalizer`/`skill_stats` | 收尾闸门 / 三段式 wrapup / 可撤回经验库 / 覆盖台账 / 工具投影 |
 
 上游均为方法论重写（未复制源码）；ARTEX 为 AGPL-3.0，再分发注意。
-原始取材在 `E:/pi/蒸馏/repos_local/`，报告在 `E:/pi/蒸馏/DISTILL.md`。
+原始取材在 `<workbench>/蒸馏/repos_local/`，报告在 `<workbench>/蒸馏/DISTILL.md`。

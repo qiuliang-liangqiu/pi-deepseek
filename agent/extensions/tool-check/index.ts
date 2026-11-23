@@ -179,7 +179,8 @@ function parseInfo(text: string): ToolInfo | null {
 
 function fingerprint(info: ToolInfo): string {
 	const missing = [...(info.missing || [])].sort().join(",");
-	return `${info.platform || "?"}:${info.checked ?? "?"}:${missing}`;
+	const alt = [...(info.needs_alt || []).map((n) => n.id)].sort().join(",");
+	return `${info.platform || "?"}:${info.checked ?? "?"}:${missing}|${alt}`;
 }
 
 async function checkNow(): Promise<ToolInfo | null> {
@@ -506,7 +507,7 @@ function installArgv(script: string, sel: Selection, ids: string[] | undefined, 
 }
 
 function manualText(script: string, sel: Selection, ids: string[] | undefined): string {
-	const cmd = script || "scripts/setup-tools.py";
+	const cmd = script || "<agent>/scripts/setup-tools.py";
 	const only = ids && ids.length ? ` --only ${ids.join(",")}` : "";
 	const plain = `python ${cmd} ${sel.targetArgs.join(" ")}${only}`;
 	const sudo = sel.sudo ? " --allow-sudo" : "";
@@ -515,6 +516,7 @@ function manualText(script: string, sel: Selection, ids: string[] | undefined): 
 		`  先看计划：${plain} --list`,
 		`  再安装：  ${plain}${sudo}`,
 		sel.kind === "ssh" ? "  SSH 需要免密或加 --ssh-password-file <文件>" : "",
+		script ? "" : "  本机没有 scripts/setup-tools.py → 先 `/wb-update` 升级（新版本会随 agent 安装），再 `/tools-setup`",
 	]
 		.filter(Boolean)
 		.join("\n");
@@ -590,13 +592,13 @@ async function localBranch(ctx: Ui, info: ToolInfo, script: string): Promise<voi
 	await offerInstall(ctx, info, script, sel, missing);
 }
 
-async function askLinuxOrLocal(ctx: Ui, info: ToolInfo): Promise<"retry" | "local" | "skip"> {
+async function askLinuxOrLocal(ctx: Ui, info: ToolInfo): Promise<"retry" | "local" | "skip" | "defer"> {
 	const choice = await ctx.ui.select(
 		"未检测到 Linux 环境（WSL / 虚拟机 / SSH 都不可用）",
 		["工具装在 Ubuntu/Kali（我先去启动它）", "工具用本机（Windows）", "稍后（6 小时内不再问）"],
 		{ timeout: 60_000 },
 	);
-	if (!choice) return "skip";
+	if (!choice) return "defer"; // Esc / 60s 超时：不退避 6h，只跳过本次
 	if (choice.startsWith("工具装在")) {
 		ctx.ui.notify(
 			[
@@ -610,7 +612,7 @@ async function askLinuxOrLocal(ctx: Ui, info: ToolInfo): Promise<"retry" | "loca
 		);
 		return (await ctx.ui.confirm("Linux 环境已启动？重新检测", "选“是”会重新扫 WSL / SSH 并检查工具", { timeout: 120_000 }))
 			? "retry"
-			: "skip";
+			: "defer";
 	}
 	if (choice.startsWith("工具用本机")) return "local";
 	snooze(info);
@@ -655,7 +657,7 @@ async function startupFlow(ctx: Ui): Promise<void> {
 			markMissing();
 			setStatus(ctx, `tools !${found.missing.length}`);
 			ctx.ui.notify(missingBlock(`Linux 环境 ${found.sel.label}`, found.missing, info.groups, found.covered), "warning");
-			if (!script) return;
+			// 没找到安装脚本也要弹：自动安装项显示“不可用”，手动项给出命令
 			await offerInstall(ctx, info, script, found.sel, found.missing);
 			return;
 		}
@@ -677,6 +679,7 @@ async function startupFlow(ctx: Ui): Promise<void> {
 			await localBranch(ctx, info, script);
 			return;
 		}
+		if (choice === "defer") return;
 		if (choice === "skip") {
 			snooze(info);
 			return;
